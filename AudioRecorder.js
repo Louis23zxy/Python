@@ -1,15 +1,17 @@
+// AudioRecorder.js
+
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, Platform } from 'react-native';
 import { Audio } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system'; // <-- Import ไลบรารีนี้
 
 export default function AudioRecorder() {
   const [recording, setRecording] = useState(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const recordingIntervalRef = useRef(null);
 
-  // ฟังก์ชันสำหรับจัดรูปแบบเวลาจากมิลลิวินาทีเป็น นาที:วินาที
   function formatTime(millis) {
     if (millis === null || isNaN(millis)) {
       return "0:00";
@@ -20,7 +22,6 @@ export default function AudioRecorder() {
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   }
 
-  // ตรวจสอบสิทธิ์และตั้งค่า Audio Mode เมื่อคอมโพเนนต์โหลดครั้งแรก
   useEffect(() => {
     (async () => {
       const { status } = await Audio.requestPermissionsAsync();
@@ -34,7 +35,6 @@ export default function AudioRecorder() {
     })();
   }, []);
 
-  // ฟังก์ชันบันทึกบันทึกเสียงลง AsyncStorage
   const saveRecordingToStorage = async (newRecordingItem) => {
     try {
       const storedRecordings = await AsyncStorage.getItem('@audio_recordings');
@@ -44,10 +44,51 @@ export default function AudioRecorder() {
       console.log('Recording saved to AsyncStorage');
     } catch (error) {
       console.error('Failed to save recording to AsyncStorage', error);
+      throw error;
     }
   };
 
-  // เริ่มบันทึกเสียง
+  const uploadRecording = async (uri, recordingName, durationMillis) => {
+    console.log('Preparing to upload recording...');
+    
+    // *** แก้ไขตรงนี้: ใช้ FileSystem เพื่ออ่านไฟล์และส่งเป็น Base64 String ***
+    try {
+        const fileBase64 = await FileSystem.readAsStringAsync(uri, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const requestBody = {
+            name: recordingName,
+            durationMillis: durationMillis,
+            fileBase64: fileBase64,
+        };
+        
+        console.log('Uploading to backend...');
+        const response = await fetch('http://172.16.16.21:5000/upload-recording', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+        });
+  
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        }
+  
+        const result = await response.json();
+        console.log('Upload successful:', result);
+        Alert.alert('บันทึกสำเร็จ', `บันทึกเสียง "${recordingName}" ถูกบันทึกบน Server แล้ว`);
+        return result;
+
+    } catch (error) {
+        console.error('Failed to upload recording', error);
+        Alert.alert('Error', 'ไม่สามารถอัปโหลดไฟล์เสียงได้ โปรดลองอีกครั้ง');
+        throw error;
+    }
+  };
+
   async function startRecording() {
     try {
       console.log('Starting recording..');
@@ -77,7 +118,6 @@ export default function AudioRecorder() {
     }
   }
 
-  // หยุดบันทึกเสียง
   async function stopRecording() {
     console.log('Stopping recording..');
     clearInterval(recordingIntervalRef.current);
@@ -85,12 +125,10 @@ export default function AudioRecorder() {
     if (recording) {
       let recordingStatus;
       try {
-        // *** ดึงสถานะก่อนที่จะ Unload ***
         recordingStatus = await recording.getStatusAsync();
-        await recording.stopAndUnloadAsync(); // ตอนนี้ค่อย Unload
+        await recording.stopAndUnloadAsync();
 
         const uri = recording.getURI();
-        // ใช้สถานะที่ดึงมาก่อนหน้านี้
         const durationMillis = recordingStatus && recordingStatus.durationMillis ? recordingStatus.durationMillis : 0;
 
         console.log('Recording stopped and stored at', uri);
@@ -98,8 +136,10 @@ export default function AudioRecorder() {
         const now = new Date();
         const recordingName = `บันทึกเสียง ${now.toLocaleDateString('th-TH')} ${now.toLocaleTimeString('th-TH')}`;
         const newRecordingItem = { uri, name: recordingName, durationMillis: durationMillis };
+
         await saveRecordingToStorage(newRecordingItem);
-        Alert.alert('บันทึกสำเร็จ', `บันทึกเสียง "${recordingName}" ถูกบันทึกแล้ว`);
+        await uploadRecording(uri, recordingName, durationMillis);
+        
       } catch (err) {
         console.error('Failed to stop recording', err);
         Alert.alert('Error', 'Failed to stop recording. Please try again.');
@@ -112,7 +152,6 @@ export default function AudioRecorder() {
     }
   }
 
-  // Cleanup interval when component unmounts
   useEffect(() => {
     return () => {
       if (recordingIntervalRef.current) {
