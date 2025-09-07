@@ -5,12 +5,19 @@ import { StyleSheet, Text, View, TouchableOpacity, Alert, Platform } from 'react
 import { Audio } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system'; // <-- Import ไลบรารีนี้
+import * as FileSystem from 'expo-file-system';
+
+// กำหนด URL ของเซิร์ฟเวอร์
+// หมายเหตุ: ใช้ IP Address ที่ถูกต้องของคอมพิวเตอร์คุณ
+// ถ้าใช้มือถือจริง: ควรเป็น http://<your_local_ip>:5000
+// ถ้าใช้ Emulator: http://localhost:5000
+const SERVER_URL = 'http://172.16.16.21:5000/upload-recording'; 
 
 export default function AudioRecorder() {
   const [recording, setRecording] = useState(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const recordingIntervalRef = useRef(null);
+  const audioRecorderRef = useRef(null);
 
   function formatTime(millis) {
     if (millis === null || isNaN(millis)) {
@@ -21,141 +28,160 @@ export default function AudioRecorder() {
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   }
-
-  useEffect(() => {
-    (async () => {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Permission to access microphone is required to record audio.');
-      }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-    })();
-  }, []);
-
-  const saveRecordingToStorage = async (newRecordingItem) => {
+  
+  // ฟังก์ชันใหม่สำหรับบันทึกข้อมูลการวิเคราะห์
+  const saveAnalysisData = async (durationMillis, fileUri, serverUri = null) => {
     try {
-      const storedRecordings = await AsyncStorage.getItem('@audio_recordings');
-      let recordingsArray = storedRecordings ? JSON.parse(storedRecordings) : [];
-      recordingsArray.push(newRecordingItem);
-      await AsyncStorage.setItem('@audio_recordings', JSON.stringify(recordingsArray));
-      console.log('Recording saved to AsyncStorage');
-    } catch (error) {
-      console.error('Failed to save recording to AsyncStorage', error);
-      throw error;
+      const date = new Date();
+      const formattedDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getFullYear()}`;
+      
+      const newAnalysis = {
+        id: Date.now().toString(),
+        timestamp: date.toISOString(),
+        duration: durationMillis,
+        fileUri: fileUri,
+        serverUri: serverUri,
+        date: formattedDate,
+        snoringEventsCount: 0,
+        apneaEventsCount: 0,
+      };
+
+      const existingData = await AsyncStorage.getItem('snoring_analysis');
+      const analysisList = existingData ? JSON.parse(existingData) : [];
+      
+      const updatedList = [...analysisList, newAnalysis];
+      await AsyncStorage.setItem('snoring_analysis', JSON.stringify(updatedList));
+
+      Alert.alert(
+        'บันทึกสำเร็จ!',
+        `บันทึกเสียงและข้อมูลถูกเก็บไว้ในเครื่องแล้ว ${serverUri ? 'และอัปโหลดขึ้นเซิร์ฟเวอร์แล้ว' : ''}`
+      );
+    } catch (e) {
+      console.error("Failed to save analysis data", e);
+      Alert.alert('Error', 'ไม่สามารถบันทึกข้อมูลการวิเคราะห์ได้');
     }
   };
 
-  const uploadRecording = async (uri, recordingName, durationMillis) => {
-    console.log('Preparing to upload recording...');
-    
-    // *** แก้ไขตรงนี้: ใช้ FileSystem เพื่ออ่านไฟล์และส่งเป็น Base64 String ***
+  // NEW: แก้ไขฟังก์ชันการอัปโหลดไฟล์ให้ใช้ Base64 และ fetch
+  const uploadAudioFile = async (fileUri, durationMillis) => {
     try {
-        const fileBase64 = await FileSystem.readAsStringAsync(uri, {
+        // 1. อ่านไฟล์เสียงให้เป็น Base64 string
+        const fileBase64 = await FileSystem.readAsStringAsync(fileUri, {
             encoding: FileSystem.EncodingType.Base64,
         });
 
+        // 2. เตรียมข้อมูลที่จะส่งไปในรูปแบบ JSON
         const requestBody = {
-            name: recordingName,
+            name: `Recording_${Date.now()}`,
             durationMillis: durationMillis,
             fileBase64: fileBase64,
         };
-        
-        console.log('Uploading to backend...');
-        const response = await fetch('http://172.16.16.21:5000/upload-recording', {
+
+        // 3. ส่งคำขอ POST ด้วย fetch
+        const response = await fetch(SERVER_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
         });
-  
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+
+        if (response.ok) {
+            const responseData = await response.json();
+            console.log('Upload successful', responseData);
+            return responseData.url; // เซิร์ฟเวอร์ควรส่ง URL ของไฟล์ที่บันทึกกลับมา
+        } else {
+            const errorBody = await response.text();
+            console.error('Server responded with an error:', response.status, errorBody);
+            Alert.alert('Upload Failed', `ไม่สามารถอัปโหลดไฟล์ไปยังเซิร์ฟเวอร์ได้: ${response.status} ${errorBody}`);
+            return null;
         }
-  
-        const result = await response.json();
-        console.log('Upload successful:', result);
-        Alert.alert('บันทึกสำเร็จ', `บันทึกเสียง "${recordingName}" ถูกบันทึกบน Server แล้ว`);
-        return result;
 
     } catch (error) {
-        console.error('Failed to upload recording', error);
-        Alert.alert('Error', 'ไม่สามารถอัปโหลดไฟล์เสียงได้ โปรดลองอีกครั้ง');
-        throw error;
+        console.error('Error uploading file:', error);
+        Alert.alert('Upload Error', `เกิดข้อผิดพลาดในการอัปโหลด: ${error.message}`);
+        return null;
     }
   };
 
   async function startRecording() {
     try {
-      console.log('Starting recording..');
-      const { status } = await Audio.getPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Permission to access microphone is required to record audio.');
-        return;
+      if (Platform.OS === 'android') {
+        await Audio.requestPermissionsAsync();
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+          staysActiveInBackground: true,
+        });
+      } else {
+        await Audio.requestPermissionsAsync();
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
       }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
 
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
       setRecording(recording);
+      audioRecorderRef.current = recording; // Store ref
       setRecordingDuration(0);
+      
+      // Start the timer
       recordingIntervalRef.current = setInterval(() => {
         setRecordingDuration(prevDuration => prevDuration + 1000);
       }, 1000);
+
+      Alert.alert('เริ่มบันทึกแล้ว', 'กำลังบันทึกเสียง...', [{ text: 'OK' }]);
       console.log('Recording started');
     } catch (err) {
       console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
+      Alert.alert('Recording Error', 'ไม่สามารถเริ่มการบันทึกได้');
     }
   }
 
   async function stopRecording() {
     console.log('Stopping recording..');
-    clearInterval(recordingIntervalRef.current);
+    
+    // Clear the timer
+    if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+    }
 
-    if (recording) {
-      let recordingStatus;
-      try {
-        recordingStatus = await recording.getStatusAsync();
-        await recording.stopAndUnloadAsync();
-
-        const uri = recording.getURI();
-        const durationMillis = recordingStatus && recordingStatus.durationMillis ? recordingStatus.durationMillis : 0;
-
-        console.log('Recording stopped and stored at', uri);
-
-        const now = new Date();
-        const recordingName = `บันทึกเสียง ${now.toLocaleDateString('th-TH')} ${now.toLocaleTimeString('th-TH')}`;
-        const newRecordingItem = { uri, name: recordingName, durationMillis: durationMillis };
-
-        await saveRecordingToStorage(newRecordingItem);
-        await uploadRecording(uri, recordingName, durationMillis);
-        
-      } catch (err) {
-        console.error('Failed to stop recording', err);
-        Alert.alert('Error', 'Failed to stop recording. Please try again.');
-      } finally {
-        setRecording(null);
-      }
-    } else {
+    if (!recording) {
       console.warn('No active recording to stop.');
       setRecording(null);
+      return;
     }
+    
+    await recording.stopAndUnloadAsync();
+    const uri = recording.getURI();
+    console.log('Recording stopped and stored at', uri);
+    
+    const duration = recordingDuration; // Use the state variable for final duration
+    setRecording(null);
+    audioRecorderRef.current = null;
+    
+    let serverUri = null;
+    if (uri) {
+        console.log('Uploading file to server...');
+        serverUri = await uploadAudioFile(uri, duration); // Pass duration to the function
+    }
+
+    // Pass the server URI to the save function
+    await saveAnalysisData(duration, uri, serverUri);
   }
 
   useEffect(() => {
     return () => {
       if (recordingIntervalRef.current) {
         clearInterval(recordingIntervalRef.current);
+      }
+      if (audioRecorderRef.current) {
+        audioRecorderRef.current.stopAndUnloadAsync();
       }
     };
   }, []);
@@ -196,7 +222,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#6200ee',
     padding: 20,
     borderRadius: 50,
-    marginBottom: 30,
+    marginBottom: 20,
     elevation: 5,
     width: 200,
   },
@@ -208,7 +234,6 @@ const styles = StyleSheet.create({
   },
   recordingTimer: {
     fontSize: 16,
-    color: '#666',
-    marginBottom: 20,
+    color: '#333',
   },
 });
