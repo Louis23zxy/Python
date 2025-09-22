@@ -11,7 +11,7 @@ import * as FileSystem from 'expo-file-system';
 // หมายเหตุ: ใช้ IP Address ที่ถูกต้องของคอมพิวเตอร์คุณ
 // ถ้าใช้มือถือจริง: ควรเป็น http://<your_local_ip>:5000
 // ถ้าใช้ Emulator: http://localhost:5000
-const SERVER_URL = 'http://172.16.16.21:5000/upload-recording'; 
+const SERVER_URL = 'http://172.16.16.21:5000/upload-and-analyze'; 
 
 export default function AudioRecorder() {
   const [recording, setRecording] = useState(null);
