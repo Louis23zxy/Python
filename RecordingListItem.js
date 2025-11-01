@@ -30,29 +30,58 @@ export default function SnoringListItem({
   currentPosition,
 }) {
   const displayTime = item.timestamp && !isNaN(new Date(item.timestamp))
-    ? new Date(item.timestamp).toLocaleTimeString()
-    : 'เวลาไม่ถูกต้อง';
-
+  ? (() => {
+      const date = new Date(item.timestamp);
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      const time = date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+      return `บันทึกเมื่อ ${day}/${month}/${year} เวลา ${time}`;
+    })()
+  : 'เวลาไม่ถูกต้อง';
   return (
     <View style={styles.listItemContainer}>
       <TouchableOpacity onPress={() => onToggleExpand(item)}>
         <View style={styles.listItemRow}>
-          <Text style={styles.listItemTime}>
-            {`บันทึกเมื่อ: ${displayTime}`}
-          </Text>
+          <Text style={styles.listItemTime}>{displayTime}</Text>
           <MaterialIcons name={isExpanded ? "keyboard-arrow-up" : "keyboard-arrow-down"} size={24} color="#556B2F" />
         </View>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>ระยะเวลา:</Text>
-          <Text style={styles.detailValue}>{formatDuration(item.duration)}</Text>
-        </View>
+            <Text style={styles.detailLabel}>ระยะเวลา:</Text>
+            <Text style={styles.detailValue}>
+             {item.duration ? formatDuration(item.duration) : "00:00"}
+            </Text>
+        </View>     
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>กรนทั้งหมด:</Text>
-          <Text style={styles.detailValue}>{item.snoringEventsCount} ครั้ง</Text>
+          <Text style={styles.detailValue}>{item.snoringEventsCount ?? "0"} ครั้ง</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>หยุดหายใจ:</Text>
-          <Text style={styles.detailValue}>{item.apneaEventsCount} ครั้ง</Text>
+          <Text style={styles.detailValue}>{item.apneaEventsCount ?? "0"} ครั้ง</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>กรนที่ตรวจพบ:</Text>
+          <Text
+            style={[
+            styles.detailValue,
+            item.snoringCount > 0 ? { color: "orange", fontWeight: "bold" } : { color: "#666" }]}>{item.snoringCount ?? "N/A"} ครั้ง</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>ความดังสูงสุด:</Text>
+          <Text
+            style={[
+            styles.detailValue,
+            item.loudestSnoreDb === -100
+            ? { color: "#666" } // ไม่มีข้อมูล → สีเทา
+            : item.loudestSnoreDb >= 40
+            ? { color: "red", fontWeight: "bold" } // ดังเกิน 40 dB → สีแดง
+            : { color: "green" } ]}>{item.loudestSnoreDb === -100 ? "ไม่มีข้อมูล" : item.loudestSnoreDb + " dB"}
+          </Text>
         </View>
       </TouchableOpacity>
 
@@ -70,7 +99,7 @@ export default function SnoringListItem({
           <Slider
             style={styles.slider}
             minimumValue={0}
-            maximumValue={item.duration || 1}
+            maximumValue={(item.duration_millis ?? 0) / 1000}
             value={isCurrentItem ? currentPosition : 0}
             onSlidingComplete={onSeek}
             minimumTrackTintColor="#556B2F"
@@ -78,8 +107,12 @@ export default function SnoringListItem({
             thumbTintColor="#556B2F"
           />
           <View style={styles.playerTime}>
-            <Text style={styles.playerTimeText}>{formatDuration(isCurrentItem ? currentPosition : 0)}</Text>
-            <Text style={styles.playerTimeText}>{formatDuration(item.duration)}</Text>
+            <Text style={styles.playerTimeText}>
+             {formatDuration((isCurrentItem ? currentPosition : 0) * 1000)} 
+            </Text>
+            <Text style={styles.playerTimeText}>
+             {formatDuration(item.duration_millis ?? 0)} 
+            </Text>
           </View>
         </View>
       )}

@@ -2,250 +2,201 @@ import tensorflow as tf
 import librosa
 import numpy as np
 import os
+import pickle
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelBinarizer 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-# 1. ฟังก์ชันสกัดคุณลักษณะ MFCC
-def extract_mfcc(y, sr, n_mfcc=20, max_len=128):  # ← เปลี่ยนจาก 130 → 128
+# --- CONFIGURATION (กำหนดค่า) ---
+# <<<<<<< สำคัญ: แก้ไข Path นี้ ให้ชี้ไปที่โฟลเดอร์ที่มีโฟลเดอร์ย่อย 'class1' และ 'class2' >>>>>>>
+DATA_PATH = "C:/Users/Naruethep Sovajan/Desktop/Sound" 
+# <<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>
+SAMPLE_RATE = 16000 # อัตราการสุ่มตัวอย่างมาตรฐาน
+MAX_LEN = 128       # ความยาวของ Mel Spectrogram (กว้าง)
+N_MELS = 128        # จำนวน Mel band (สูง)
+MODEL_OUTPUT_DIR = "C:/Users/Naruethep Sovajan/Desktop/VoiceRe/SaveModel"
+model_save_path = "snoring_cnn_classifier_model.h5"
+label_encoder_path = "label_encoder.pkl"
+# ---------------------
+
+# 1. ฟังก์ชันสกัดคุณลักษณะ Mel Spectrogram (สำหรับ 2D-CNN)
+def extract_features(file_path, sr=SAMPLE_RATE, n_mels=N_MELS, max_len=MAX_LEN):
     """
-    สกัดคุณลักษณะ MFCC จากสัญญาณเสียง
-    พารามิเตอร์:
-        y: สัญญาณเสียง
-        sr: อัตราการสุ่มตัวอย่าง
-        n_mfcc: จำนวนสัมประสิทธิ์ MFCC
-        max_len: ความยาวสูงสุดของเฟรม (ปรับให้เท่ากันทุกไฟล์)
-    คืนค่า:
-        เมทริกซ์คุณลักษณะ MFCC ที่ผ่านการปรับขนาดแล้ว
+    สกัดคุณลักษณะ Mel Spectrogram และปรับความยาวให้คงที่
     """
     try:
-        # สกัด MFCC และ derivatives
-        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
-        delta = librosa.feature.delta(mfcc)
-        delta2 = librosa.feature.delta(mfcc, order=2)
+        y, sr = librosa.load(file_path, sr=sr)
+        mel_spec = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=n_mels)
+        features = librosa.power_to_db(mel_spec, ref=np.max)
         
-        features = np.vstack([mfcc, delta, delta2])
-        
-        # ปรับความยาวให้เท่ากัน
+        # ปรับความยาวให้เท่ากัน (Padding/Trimming)
         if features.shape[1] < max_len:
             pad_width = max_len - features.shape[1]
-            features = np.pad(features, pad_width=((0,0), (0,pad_width)), mode='constant')
+            features = np.pad(features, pad_width=((0, 0), (0, pad_width)), mode='constant')
         else:
             features = features[:, :max_len]
             
-        return features.T  # (time_steps, features)
+        # เพิ่มมิติ channel (สำหรับ CNN: [height, width, channel])
+        features = np.expand_dims(features, axis=-1)
+        return features
+        
     except Exception as e:
-        print(f"Error extracting MFCC: {e}")
-        return None
+        return None 
 
-# 2. ฟังก์ชันโหลดข้อมูลเสียงกรน
-def load_snoring_data(data_dir, max_files=None):
+# 2. ฟังก์ชันสร้างโมเดล 2D-CNN
+def create_cnn_model(input_shape, num_classes=1):
     """
-    โหลดข้อมูลเสียงกรนจากโฟลเดอร์
-    พารามิเตอร์:
-        data_dir: เส้นทางไปยังโฟลเดอร์ข้อมูล
-        max_files: จำนวนไฟล์สูงสุดที่จะโหลด (None สำหรับโหลดทั้งหมด)
-    คืนค่า:
-        อาร์เรย์ของคุณลักษณะ MFCC
+    สร้างโมเดล 2D-CNN สำหรับการจำแนกเสียงกรน/ไม่กรน (Binary Classification)
     """
-    features = []
-    file_list = [f for f in os.listdir(data_dir) if f.endswith('.wav')]
-    
-    if max_files is not None:
-        file_list = file_list[:max_files]
-    
-    print(f"\nพบไฟล์เสียงทั้งหมด {len(file_list)} ไฟล์")
-    print("กำลังโหลดและประมวลผลไฟล์...")
-    
-    for file in tqdm(file_list):
-        file_path = os.path.join(data_dir, file)
-        try:
-            y, sr = librosa.load(file_path, sr=None)
-            mfcc = extract_mfcc(y, sr)
-            if mfcc is not None:
-                features.append(mfcc)
-        except Exception as e:
-            print(f"\nError loading {file}: {e}")
-    
-    if len(features) == 0:
-        print("\nไม่พบไฟล์เสียงที่ประมวลผลได้!")
-        return None
-    
-    print(f"\nโหลดข้อมูลสำเร็จ: {len(features)} ไฟล์")
-    return np.array(features)
+    model = tf.keras.models.Sequential([
+        # 1st Convolution Block
+        tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=input_shape, padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+        tf.keras.layers.Dropout(0.25),
 
-# 3. สร้างโครงสร้าง Autoencoder
-def build_autoencoder(input_shape):
-    """
-    สร้างโมเดล Autoencoder สำหรับการเรียนรู้คุณลักษณะเสียงกรน
-    พารามิเตอร์:
-        input_shape: รูปร่างของข้อมูลนำเข้า (time_steps, features)
-    คืนค่า:
-        โมเดล Autoencoder
-    """
-    input_layer = tf.keras.layers.Input(shape=input_shape)
-    
-    # Encoder
-    x = tf.keras.layers.Conv1D(64, 5, activation='relu', padding='same')(input_layer)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.MaxPooling1D(2)(x)
-    
-    x = tf.keras.layers.Conv1D(128, 3, activation='relu', padding='same')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.MaxPooling1D(2)(x)
-    
-    # Decoder
-    x = tf.keras.layers.Conv1D(128, 3, activation='relu', padding='same')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.UpSampling1D(2)(x)
-    
-    x = tf.keras.layers.Conv1D(64, 5, activation='relu', padding='same')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.UpSampling1D(2)(x)
-    
-    output_layer = tf.keras.layers.Conv1D(input_shape[1], 3, activation='linear', padding='same')(x)
-    
-    autoencoder = tf.keras.models.Model(input_layer, output_layer)
-    autoencoder.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
-                      loss='mse')
-    
-    return autoencoder
+        # 2nd Convolution Block
+        tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu', padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        
+        # 3rd Convolution Block
+        tf.keras.layers.Conv2D(128, kernel_size=(3, 3), activation='relu', padding='same'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+        tf.keras.layers.Dropout(0.25),
 
-# 4. ฟังก์ชันแสดงผลการฝึก
+        # Classification Head (Dense Layers)
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(256, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dropout(0.5),
+
+        # Output Layer: ใช้ Sigmoid สำหรับ Binary Classification (0 หรือ 1)
+        tf.keras.layers.Dense(num_classes, activation='sigmoid')
+    ])
+    
+    # คอมไพล์โมเดล: ใช้ binary_crossentropy และ Adam optimizer
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        loss='binary_crossentropy', 
+        metrics=['accuracy']
+    )
+    
+    return model
+
+# 3. ฟังก์ชันช่วยแสดงกราฟ
 def plot_training_history(history):
-    plt.figure(figsize=(10, 5))
-    plt.plot(history.history['loss'], label='Training Loss')
+    plt.figure(figsize=(12, 4))
+    
+    # Loss Plot
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['loss'], label='Train Loss')
     plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.title('Training History')
-    plt.ylabel('Mean Squared Error (MSE)')
+    plt.title('Model Loss')
+    plt.ylabel('Loss')
     plt.xlabel('Epoch')
-    plt.legend()
-    plt.grid(True)
+    plt.legend(loc='upper right')
+
+    # Accuracy Plot
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['accuracy'], label='Train Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Model Accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(loc='lower right')
+    
     plt.show()
 
-# 5. ฟังก์ชันหลัก
+# 4. ฟังก์ชันหลัก (ปรับปรุงการโหลดข้อมูลให้รองรับ 2 คลาส)
 def main():
-    # ตั้งค่าเส้นทาง
-    data_dir = r'C:\Users\Naruethep Sovajan\Desktop\sound\class1'
-    model_save_path = r'C:\Users\Naruethep Sovajan\Desktop\VoiceRe\SaveModel\snoring_autoencoder.keras'
     
-    # โปรแกรมแสดงข้อมูลเริ่มต้น
     print("="*50)
-    print("ระบบฝึกโมเดลตรวจจับเสียงกรนแบบ Autoencoder")
+    print("ระบบฝึกโมเดลตรวจจับเสียงกรนแบบ 2D-CNN Classification")
     print("="*50)
     
-    # โหลดข้อมูล
-    print("\n[ขั้นตอนที่ 1] กำลังโหลดข้อมูลเสียงกรน...")
-    X = load_snoring_data(data_dir)
+    # [ขั้นตอนที่ 1] โหลดข้อมูล (สำคัญ: การสกัด Label จากโฟลเดอร์ 'class1' และ 'class2')
+    print("\n[ขั้นตอนที่ 1] โหลดและสกัดคุณลักษณะข้อมูล (จาก 2 โฟลเดอร์)")
     
-    if X is None:
-        return
+    features = []
+    labels = []
+
+    # เดินสำรวจทุกโฟลเดอร์ย่อยใน DATA_PATH
+    for dirname, _, filenames in os.walk(DATA_PATH):
+        label = os.path.basename(dirname) 
+        
+        # <<< การแก้ไขที่สำคัญ: เปลี่ยนจาก ['0', '1'] เป็น ['class1', 'class2'] >>>
+        if label in ['class1', 'class2']: 
+            for filename in tqdm(filenames, desc=f"Processing {label} files"):
+                if filename.endswith(('.wav', '.mp3')):
+                    file_path = os.path.join(dirname, filename)
+                    feature = extract_features(file_path)
+                    
+                    if feature is not None and feature.shape == (N_MELS, MAX_LEN, 1):
+                        features.append(feature)
+                        labels.append(label)
+
+    X = np.array(features)
+    y_str = np.array(labels) 
+
+    # [ขั้นตอนที่ 2] แปลง Label และแบ่งข้อมูล
+    print(f"\nพบข้อมูลทั้งหมดที่ประมวลผลได้: {len(X)} ตัวอย่าง")
     
-    # แบ่งข้อมูล
-    print("\n[ขั้นตอนที่ 2] แบ่งข้อมูลเป็นชุดฝึกและชุดตรวจสอบ")
-    X_train, X_val = train_test_split(X, test_size=0.2, random_state=42)
-    print(f"จำนวนข้อมูลฝึก: {len(X_train)} ตัวอย่าง")
-    print(f"จำนวนข้อมูลตรวจสอบ: {len(X_val)} ตัวอย่าง")
+    encoder = LabelBinarizer()
+    # LabelBinarizer จะแปลง 'class1' และ 'class2' เป็นตัวเลข 0 และ 1
+    Y = encoder.fit_transform(y_str)
     
-    # สร้างโมเดล
-    print("\n[ขั้นตอนที่ 3] สร้างโครงสร้าง Autoencoder")
-    autoencoder = build_autoencoder(input_shape=(X_train.shape[1], X_train.shape[2]))
-    autoencoder.summary()
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1) # ปรับรูปร่างให้เข้ากับ Keras (None, 1)
     
-    # ฝึกโมเดล
-    print("\n[ขั้นตอนที่ 4] เริ่มฝึกโมเดล")
-    history = autoencoder.fit(
-        X_train, X_train,
-        epochs=100,
-        batch_size=32,
-        validation_data=(X_val, X_val),
-        callbacks=[
-            tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True),
-            tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=5)
-        ],
-        verbose=1
+    # แบ่งข้อมูล 80% Train, 20% Validation (ใช้ stratify เพื่อให้ข้อมูลสมดุล)
+    X_train, X_val, Y_train, Y_val = train_test_split(
+        X, Y, test_size=0.2, random_state=42, stratify=Y 
     )
     
-    # แสดงผลการฝึก
-    plot_training_history(history)
+    print(f"X_train.shape: {X_train.shape}")
+    print(f"Y_train.shape: {Y_train.shape}")
+
+
+    # [ขั้นตอนที่ 3] สร้างโมเดล 2D-CNN
+    print("\n[ขั้นตอนที่ 3] สร้างโมเดล 2D-CNN")
+    input_shape = X_train.shape[1:] 
     
-    # บันทึกโมเดล
-    print("\n[ขั้นตอนที่ 5] บันทึกโมเดล")
-    autoencoder.save(model_save_path)
-    print(f"บันทึกโมเดลเรียบร้อยที่: {model_save_path}")
-    
-    # ตัวอย่างการคำนวณ Reconstruction Error
-    sample = X_val[0]
-    reconstructed = autoencoder.predict(np.expand_dims(sample, axis=0))
-    mse = np.mean(np.square(sample - reconstructed[0]))
-    print(f"\nตัวอย่าง Reconstruction Error: {mse:.4f}")
-def main():
-    import pickle  # เพิ่ม import สำหรับบันทึก label encoder
+    cnn_model = create_cnn_model(input_shape=input_shape, num_classes=1) 
+    cnn_model.summary()
 
-    # ตั้งค่าเส้นทาง
-    data_dir = r'C:\Users\Naruethep Sovajan\Desktop\sound\class1'
-    model_save_path = r'C:\Users\Naruethep Sovajan\Desktop\VoiceRe\SaveModel\snoring_autoencoder.keras'
-    label_encoder_path = r'C:\Users\Naruethep Sovajan\Desktop\VoiceRe\Tranferdata\label_encoder.pkl'
-    
-    print("="*50)
-    print("ระบบฝึกโมเดลตรวจจับเสียงกรนแบบ Autoencoder")
-    print("="*50)
-
-    # [ขั้นตอนที่ 1] โหลดข้อมูลเสียงกรน
-    print("\n[ขั้นตอนที่ 1] กำลังโหลดข้อมูลเสียงกรน...")
-    X = load_snoring_data(data_dir)
-
-    if X is None:
-        return
-
-    # [ขั้นตอนที่ 2] แบ่งข้อมูลเป็นชุดฝึกและชุดตรวจสอบ
-    print("\n[ขั้นตอนที่ 2] แบ่งข้อมูลเป็นชุดฝึกและชุดตรวจสอบ")
-    from sklearn.model_selection import train_test_split
-    X_train, X_val = train_test_split(X, test_size=0.2, random_state=42)
-    print(f"จำนวนข้อมูลฝึก: {len(X_train)} ตัวอย่าง")
-    print(f"จำนวนข้อมูลตรวจสอบ: {len(X_val)} ตัวอย่าง")
-
-    # [ขั้นตอนที่ 3] สร้างโครงสร้าง Autoencoder
-    print("\n[ขั้นตอนที่ 3] สร้างโครงสร้าง Autoencoder")
-    autoencoder = build_autoencoder(input_shape=(X_train.shape[1], X_train.shape[2]))
-    autoencoder.summary()
-
-    # [ขั้นตอนที่ 4] เริ่มฝึกโมเดล
+    # [ขั้นตอนที่ 4] เริ่มฝึกโมเดล (Supervised)
     print("\n[ขั้นตอนที่ 4] เริ่มฝึกโมเดล")
-    history = autoencoder.fit(
-        X_train, X_train,
+    history = cnn_model.fit(
+        X_train, Y_train,  
         epochs=100,
-        batch_size=16,
-        validation_data=(X_val, X_val),
+        batch_size=32, # Batch Size ที่เหมาะสม
+        validation_data=(X_val, Y_val), 
         callbacks=[
-            tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True),
-            tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=5)
+            tf.keras.callbacks.EarlyStopping(patience=15, restore_best_weights=True), 
+            tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=7) 
         ],
         verbose=1
     )
 
-    # แสดงกราฟ loss
+    # แสดงกราฟ loss และ accuracy
     plot_training_history(history)
 
-    # [ขั้นตอนที่ 5] บันทึกโมเดล
+    # [ขั้นตอนที่ 5] บันทึกโมเดลและ Encoder
     print("\n[ขั้นตอนที่ 5] บันทึกโมเดล")
-    autoencoder.save(model_save_path)
+    os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True) 
+    cnn_model.save(model_save_path)
     print(f"✅ บันทึกโมเดลเรียบร้อยที่: {model_save_path}")
 
-    # [ขั้นตอนที่ 6] บันทึก label encoder (ในที่นี้ยังไม่มี encoder จริง จึงเซฟ None ไว้ก่อน)
     try:
         with open(label_encoder_path, 'wb') as f:
-            pickle.dump(None, f)  # ถ้ามี label encoder จริง เปลี่ยน None เป็นตัวแปร encoder
+            pickle.dump(encoder, f)
         print(f"✅ บันทึก label encoder เรียบร้อยที่: {label_encoder_path}")
     except Exception as e:
-        print(f"เกิดข้อผิดพลาดในการบันทึก label encoder: {e}")
-
-    # [ขั้นตอนที่ 7] แสดง reconstruction error ตัวอย่าง
-    sample = X_val[0]
-    reconstructed = autoencoder.predict(np.expand_dims(sample, axis=0))
-    mse = np.mean(np.square(sample - reconstructed[0]))
-    print(f"\nตัวอย่าง Reconstruction Error: {mse:.4f}")
-
+        print(f"❌ เกิดข้อผิดพลาดในการบันทึก Label Encoder: {e}")
 
 if __name__ == "__main__":
     main()

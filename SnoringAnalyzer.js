@@ -6,11 +6,92 @@ import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import SnoringListItem from './components/RecordingListItem';
+import { auth } from './firebase'; 
+import { onAuthStateChanged } from 'firebase/auth';
 
+const API_URL = "http://172.16.16.12:5000";
 export default function SnoringAnalyzer() {
   const [analysisData, setAnalysisData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState('');
+
+  const [userUID, setUserUID] = useState(null); 
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+   useEffect(() => {
+     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserUID(user.uid);
+      } else {
+        setUserUID(null); 
+      }
+      setIsAuthLoading(false);
+      });
+      return unsubscribe;
+    }, []);
+
+  const fetchRecordings = useCallback(async (uid) => {
+    if (!uid) {
+      setAnalysisData([]);
+      setIsLoading(false);
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      // 🚩 ใช้ UID ในการเรียก API เพื่อดึงข้อมูลเฉพาะผู้ใช้คนนี้
+      const response = await fetch(`${API_URL}/get-recordings/${uid}`); 
+      const data = await response.json();
+      
+      if (response.ok) {
+  const mappedData = data.map(item => {
+    const createdDate = new Date(item.created_at);
+    const formattedDate = `${createdDate
+      .getDate()
+      .toString()
+      .padStart(2, '0')}/${(createdDate.getMonth() + 1)
+      .toString()
+      .padStart(2, '0')}/${createdDate.getFullYear()}`;
+
+    return {
+      id: item.id,
+      name: item.name,
+      snoringCount: item.snoring_count,
+      loudestSnoreDb: item.loudest_snore_db,
+      fileUri: `${API_URL}${item.file_url}`,
+      timestamp: item.created_at,
+      date: formattedDate, // ✅ เพิ่มบรรทัดนี้
+      duration: item.duration_millis,
+      snoringEventsCount: item.snoring_count || 0,
+      apneaEventsCount: 0
+    };
+  });
+      setAnalysisData(mappedData);
+    } else {
+       Alert.alert("Error", `Failed to load data: ${data.message || 'Server error'}`);
+      setAnalysisData([]);
+    }
+   
+
+    } catch (error) {
+      console.error("Network Error:", error);
+      Alert.alert("Network Error", "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์เพื่อดึงข้อมูลประวัติได้");
+      setAnalysisData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // useFocusEffect: โหลดข้อมูลทุกครั้งที่หน้าจอนี้ถูกเปิด/โฟกัส
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthLoading && userUID) {
+        fetchRecordings(userUID);
+      } else if (!isAuthLoading && !userUID) {
+        setAnalysisData([]); // เคลียร์ข้อมูลถ้าไม่มีผู้ใช้ล็อกอิน
+      }
+    }, [isAuthLoading, userUID, fetchRecordings]) 
+  );
 
   // Audio Player State
   const [currentSound, setCurrentSound] = useState(null);
@@ -162,6 +243,23 @@ export default function SnoringAnalyzer() {
       </View>
     );
   }
+    if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#007AFF" /> 
+        <Text style={{ marginTop: 10 }}>{isAuthLoading ? "กำลังตรวจสอบผู้ใช้..." : "กำลังโหลดประวัติ..."}</Text>
+      </View>
+      );
+    }
+
+    if (!userUID) {
+     return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ fontSize: 18, color: '#333' }}>กรุณาเข้าสู่ระบบ</Text>
+            <Text style={{ fontSize: 14, color: '#888', marginTop: 5 }}>เพื่อแสดงประวัติการกรนส่วนตัว</Text>
+        </View>
+      );
+    }
 
   const renderContent = () => {
     if (filteredData.length === 0) {
@@ -192,6 +290,8 @@ export default function SnoringAnalyzer() {
             onPlayPause={onPlayPause}
             onSeek={onSeek}
             currentPosition={position}
+            snoringCount={item.snoringCount}
+            loudestSnoreDb={item.loudestSnoreDb}
           />
         )}
         contentContainerStyle={styles.listContent}
