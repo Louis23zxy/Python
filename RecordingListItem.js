@@ -1,10 +1,12 @@
-// src/components/SnoringListItem.js
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
+import Svg, { Rect, G as Group, Line } from 'react-native-svg';
 
 const { width: screenWidth } = Dimensions.get('window');
+const GRAPH_HEIGHT = 50; 
+const GRAPH_MARGIN_HORIZONTAL = 20;
 
 const formatDuration = (millis) => {
   if (millis === null || isNaN(millis)) {
@@ -18,6 +20,69 @@ const formatDuration = (millis) => {
 
   return `${pad(minutes)}:${pad(seconds)}`;
 };
+const SnoringGraph = ({ item }) => {
+    const totalDurationMillis = item.duration_millis ?? 0;
+    const timestamps = item.snoringAbsoluteTimestamps;
+    const graphWidth = screenWidth - (2 * GRAPH_MARGIN_HORIZONTAL);
+
+    if (!timestamps || timestamps.length === 0 || totalDurationMillis === 0 || item.snoringCount === 0) {
+        return (
+            <View style={styles.graphPlaceholder}>
+                <Text style={styles.detailLabel}>ไม่มีข้อมูลการกรนสำหรับแสดงกราฟ</Text>
+            </View>
+        );
+    }
+    
+    // คำนวณตำแหน่ง X ของแท่งกรนทั้งหมด
+    const xPositions = timestamps.map(isoTime => {
+        const snoreTime = new Date(isoTime).getTime();
+        const startTime = new Date(timestamps[0]).getTime(); 
+        const relativeMillis = snoreTime - startTime;
+
+        // คำนวณตำแหน่ง X บนกราฟ (0 ถึง graphWidth)
+        const xPosition = (relativeMillis / totalDurationMillis) * graphWidth;
+        return xPosition;
+    }).filter(x => x >= 0 && x <= graphWidth);
+    
+    const barWidth = 1.5; // ความหนาแท่งกรน
+    const barHeight = GRAPH_HEIGHT;
+    const barFillColor = "#FF6347"; // สีแดงอมส้ม
+
+    return (
+        <View style={styles.graphContainer}>
+            <Text style={styles.graphTitle}>กิจกรรมการกรนตามช่วงเวลา ({item.snoringCount} ครั้ง)</Text>
+            <Svg height={GRAPH_HEIGHT} width={graphWidth} style={{ alignSelf: 'center' }}>
+                {/* Background Line (แกน X) */}
+                <Line
+                    x1="0"
+                    y1={GRAPH_HEIGHT}
+                    x2={graphWidth}
+                    y2={GRAPH_HEIGHT}
+                    stroke="#ccc"
+                    strokeWidth="1"
+                />
+                {/* วาดแท่งกรน */}
+                <Group>
+                    {xPositions.map((xPos, index) => (
+                        <Rect
+                            key={index}
+                            x={xPos}
+                            y={0} 
+                            width={barWidth}
+                            height={barHeight}
+                            fill={barFillColor}
+                        />
+                    ))}
+                </Group>
+            </Svg>
+             {/* แสดงเวลาเริ่มต้นและสิ้นสุด */}
+            <View style={styles.graphTimeLabels}>
+                <Text style={styles.playerTimeText}>0:00</Text>
+                <Text style={styles.playerTimeText}>{formatDuration(totalDurationMillis)}</Text>
+            </View>
+        </View>
+    );
+}
 
 export default function SnoringListItem({
   item,
@@ -43,6 +108,7 @@ export default function SnoringListItem({
       return `บันทึกเมื่อ ${day}/${month}/${year} เวลา ${time}`;
     })()
   : 'เวลาไม่ถูกต้อง';
+  const durationInSeconds = (item.duration_millis ?? 0) / 1000;
   return (
     <View style={styles.listItemContainer}>
       <TouchableOpacity onPress={() => onToggleExpand(item)}>
@@ -53,13 +119,9 @@ export default function SnoringListItem({
         <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>ระยะเวลา:</Text>
             <Text style={styles.detailValue}>
-             {item.duration ? formatDuration(item.duration) : "00:00"}
+             {formatDuration(item.duration ?? 0)}
             </Text>
         </View>     
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>กรนทั้งหมด:</Text>
-          <Text style={styles.detailValue}>{item.snoringEventsCount ?? "0"} ครั้ง</Text>
-        </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>หยุดหายใจ:</Text>
           <Text style={styles.detailValue}>{item.apneaEventsCount ?? "0"} ครั้ง</Text>
@@ -77,12 +139,12 @@ export default function SnoringListItem({
             style={[
             styles.detailValue,
             item.loudestSnoreDb === -100
-            ? { color: "#666" } // ไม่มีข้อมูล → สีเทา
+            ? { color: "#666" } 
             : item.loudestSnoreDb >= 40
-            ? { color: "red", fontWeight: "bold" } // ดังเกิน 40 dB → สีแดง
+            ? { color: "red", fontWeight: "bold" } 
             : { color: "green" } ]}>{item.loudestSnoreDb === -100 ? "ไม่มีข้อมูล" : item.loudestSnoreDb + " dB"}
-          </Text>
-        </View>
+          </Text>          
+        </View>   
       </TouchableOpacity>
 
       {isExpanded && (
@@ -99,7 +161,7 @@ export default function SnoringListItem({
           <Slider
             style={styles.slider}
             minimumValue={0}
-            maximumValue={(item.duration_millis ?? 0) / 1000}
+            maximumValue={durationInSeconds} // ✅ ใช้ durationInSeconds
             value={isCurrentItem ? currentPosition : 0}
             onSlidingComplete={onSeek}
             minimumTrackTintColor="#556B2F"
@@ -113,11 +175,13 @@ export default function SnoringListItem({
             <Text style={styles.playerTimeText}>
              {formatDuration(item.duration_millis ?? 0)} 
             </Text>
-          </View>
+          </View>          
+          <SnoringGraph item={item} />
         </View>
       )}
     </View>
   );
+
 }
 
 const styles = StyleSheet.create({
@@ -187,4 +251,32 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 40,
   },
+  graphContainer: {
+    marginTop: 15,
+    paddingHorizontal: GRAPH_MARGIN_HORIZONTAL,
+  },
+  graphTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+    alignSelf: 'center',
+  },
+  graphTimeLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: 0,
+    marginTop: 2,
+  },
+  graphPlaceholder: {
+    height: GRAPH_HEIGHT + 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 5,
+    marginVertical: 15,
+    paddingHorizontal: 20,
+  }
 });
