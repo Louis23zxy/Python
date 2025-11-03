@@ -135,6 +135,7 @@ export default function AudioRecorder() {
         loudestSnoreDb: result.loudest_snore_db, // ใช้ key ที่ถูกต้องจาก server
         serverFileUrl: result.file_url, // URL ของไฟล์บน server
         snoringAbsoluteTimestamps: result.snoring_absolute_timestamps || [],
+        duration_millis: duration * 1000,
       });
 
       await AsyncStorage.setItem("snoring_analysis", JSON.stringify(existingData));
