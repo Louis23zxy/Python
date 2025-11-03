@@ -1,5 +1,12 @@
+// AdminDashboardScreen.js (ฉบับปรับปรุง)
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
+// *** เพิ่มการ Import ที่จำเป็น ***
+import { useNavigation } from '@react-navigation/native';
+import { signOut } from 'firebase/auth'; 
+import { auth } from './firebase'; 
+// ------------------------------------
+import UserListItem from './components/UserListItem'; 
 const mockUsers = [
   {
     id: 1,
@@ -67,53 +74,51 @@ const processUsersData = (users) => {
     };
   });
 };
+// UserListItem Component ที่ถูกแยกออกไป (นำออกไปจากไฟล์นี้)
+// ...
 
-const UserListItem = ({ user }) => {
-  const handleAction = () => {
-    const action = user.isDeleted ? 'กู้คืน' : 'Soft Delete';
+const AdminDashboardScreen = () => {
+  const navigation = useNavigation(); // *** ต้องใช้ useNavigation ***
+  const data = processUsersData(mockUsers);
+
+  // *** 🔑 ฟังก์ชันจัดการการออกจากระบบ ***
+  const handleLogout = async () => {
     Alert.alert(
-      `${action} บัญชี`,
-      `คุณต้องการ${action}บัญชีของ ${user.fullName} หรือไม่?`,
+      "ออกจากระบบ",
+      "คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?",
       [
         { text: "ยกเลิก", style: "cancel" },
-        { text: action, onPress: () => console.log(`${action} user ID: ${user.id}`) },
+        { 
+          text: "ออกจากระบบ", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await signOut(auth);
+              // ใช้ replace เพื่อแทนที่หน้าปัจจุบันด้วย SignInScreen (ป้องกันการกดปุ่ม Back)
+              navigation.replace('SignIn'); 
+            } catch (error) {
+              Alert.alert("ข้อผิดพลาด", "ไม่สามารถออกจากระบบได้: " + error.message);
+            }
+          }
+        },
       ]
     );
   };
-
-  const statusStyle = user.isDeleted ? styles.statusDeleted : styles.statusActive;
-  const actionButtonStyle = user.isDeleted ? styles.buttonRestore : styles.buttonDelete;
-  const actionButtonText = user.isDeleted ? 'กู้คืน' : 'ระงับ';
-
-  return (
-    <View style={user.isDeleted ? styles.rowDeleted : styles.rowContainer}>
-      <View style={styles.cellName}>
-        <Text style={styles.textName}>{user.fullName}</Text>
-        <Text style={[styles.textStatus, statusStyle]}>
-          {user.isDeleted ? 'ระงับ (Soft Delete)' : 'ใช้งานปกติ'}
-        </Text>
-      </View>
-      <View style={styles.cellStats}>
-        <Text style={styles.textLabel}>ใช้ล่าสุด: <Text style={styles.textValue}>{user.lastUsed}</Text></Text>
-        <Text style={styles.textLabel}>วันใช้งาน: <Text style={styles.textValue}>{user.daysUsed} วัน</Text></Text>
-        <Text style={styles.textLabel}>เวลาอัดรวม: <Text style={styles.textValue}>{user.totalDuration}</Text></Text>
-      </View>     
-      <View style={styles.cellAction}>
-        <TouchableOpacity style={[styles.buttonBase, actionButtonStyle]} onPress={handleAction}>
-          <Text style={styles.buttonText}>{actionButtonText}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-const AdminDashboardScreen = () => {
-  const data = processUsersData(mockUsers);
+  // --------------------------------------
 
   // ส่วนหัวของแดชบอร์ด
   const renderHeader = () => (
     <View style={styles.headerContainer}>
-      <Text style={styles.title}>แผงควบคุมผู้ดูแลระบบ</Text>
-      <Text style={styles.subtitle}>จัดการบัญชีผู้ใช้และการใช้งาน</Text>
+        <View style={styles.headerTitleRow}>
+            <View>
+                <Text style={styles.title}>แผงควบคุมผู้ดูแลระบบ</Text>
+                <Text style={styles.subtitle}>จัดการบัญชีผู้ใช้และการใช้งาน</Text>
+            </View>
+            {/* *** ปุ่มออกจากระบบ *** */}
+            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                <Text style={styles.logoutButtonText}>ออกจากระบบ</Text>
+            </TouchableOpacity>
+        </View>
       <View style={styles.statsBar}>
         <Text style={styles.statText}>รวม: {mockUsers.length} คน</Text>
         <Text style={styles.statText}>Active: {mockUsers.filter(u => !u.isDeleted).length} คน</Text>
@@ -142,6 +147,24 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ddd',
     marginBottom: 10,
   },
+  // *** เพิ่ม Style สำหรับปุ่ม Logout ***
+  headerTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  logoutButton: {
+    backgroundColor: '#dc3545', // แดง
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 5,
+  },
+  logoutButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  // -----------------------------------
   title: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -165,79 +188,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     fontWeight: '600',
   },
-  // --- รายการผู้ใช้ (List Item) ---
-  rowContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    elevation: 2, // เงาสำหรับ Android
-    shadowColor: '#000', // เงาสำหรับ iOS
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  rowDeleted: {
-    ...this.rowContainer,
-    backgroundColor: '#fff0f0', // สีแดงอ่อนสำหรับบัญชีที่ถูกลบ
-    opacity: 0.8,
-  },
-  cellName: {
-    flex: 2.5,
-  },
-  cellStats: {
-    flex: 3,
-    paddingHorizontal: 10,
-  },
-  cellAction: {
-    flex: 1.5,
-    alignItems: 'flex-end',
-  },
-  textName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  textStatus: {
-    fontSize: 12,
-  },
-  statusActive: {
-    color: '#28a745', // เขียว
-  },
-  statusDeleted: {
-    color: '#dc3545', // แดง
-  },
-  textLabel: {
-    fontSize: 11,
-    color: '#777',
-  },
-  textValue: {
-    fontWeight: '600',
-    color: '#555',
-  },
-  
-  buttonBase: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 5,
-    minWidth: 80,
-    alignItems: 'center',
-  },
-  buttonDelete: {
-    backgroundColor: '#dc3545', // แดง
-  },
-  buttonRestore: {
-    backgroundColor: '#007bff', // น้ำเงิน
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
+  // ลบ styles รายการผู้ใช้ (List Item) ออกจากไฟล์นี้แล้ว
 });
 
 export default AdminDashboardScreen;

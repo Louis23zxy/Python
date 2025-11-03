@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
-import Svg, { Rect, G as Group, Line } from 'react-native-svg';
+import Svg, { Rect, G as Group, Line, Text as SvgText } from 'react-native-svg';
 
 const { width: screenWidth } = Dimensions.get('window');
 const GRAPH_HEIGHT = 50; 
@@ -22,7 +22,8 @@ const formatDuration = (millis) => {
 };
 const SnoringGraph = ({ item }) => {
     const totalDurationMillis = item.duration_millis ?? 0;
-    const timestamps = item.snoringAbsoluteTimestamps;
+    const timestamps = item.snoringAbsoluteTimestamps || item.snoring_absolute_timestamps;
+    console.log("timestamps:", item.snoringAbsoluteTimestamps, item.snoring_absolute_timestamps);
     const graphWidth = screenWidth - (2 * GRAPH_MARGIN_HORIZONTAL);
 
     if (!timestamps || timestamps.length === 0 || totalDurationMillis === 0 || item.snoringCount === 0) {
@@ -32,21 +33,29 @@ const SnoringGraph = ({ item }) => {
             </View>
         );
     }
-    
-    // คำนวณตำแหน่ง X ของแท่งกรนทั้งหมด
+    const startTime = new Date(timestamps[0]).getTime();
+    const endTime = startTime + totalDurationMillis;
     const xPositions = timestamps.map(isoTime => {
-        const snoreTime = new Date(isoTime).getTime();
-        const startTime = new Date(timestamps[0]).getTime(); 
-        const relativeMillis = snoreTime - startTime;
-
-        // คำนวณตำแหน่ง X บนกราฟ (0 ถึง graphWidth)
-        const xPosition = (relativeMillis / totalDurationMillis) * graphWidth;
-        return xPosition;
-    }).filter(x => x >= 0 && x <= graphWidth);
+    const snoreTime = new Date(isoTime).getTime();
+    const startTime = new Date(timestamps[0]).getTime(); 
+    const relativeMillis = snoreTime - startTime;
+    const endTime   = startTime + item.duration_millis
+    const getX = (iso) => {
+      const t = new Date(iso).getTime()
+      const ratio = (t - startTime) / (endTime - startTime)
+      return ratio * graphWidth
+    }
+    const xPosition = (relativeMillis / totalDurationMillis) * graphWidth;
+    return xPosition;
+})
     
     const barWidth = 1.5; // ความหนาแท่งกรน
     const barHeight = GRAPH_HEIGHT;
     const barFillColor = "#FF6347"; // สีแดงอมส้ม
+    const formatClock = (isoString) => {
+    const d = new Date(isoString)
+    return d.toLocaleTimeString('th-TH', { hour12: false })}
+
 
     return (
         <View style={styles.graphContainer}>
@@ -61,24 +70,25 @@ const SnoringGraph = ({ item }) => {
                     stroke="#ccc"
                     strokeWidth="1"
                 />
-                {/* วาดแท่งกรน */}
                 <Group>
-                    {xPositions.map((xPos, index) => (
-                        <Rect
-                            key={index}
-                            x={xPos}
-                            y={0} 
-                            width={barWidth}
-                            height={barHeight}
-                            fill={barFillColor}
-                        />
-                    ))}
-                </Group>
+                 {timestamps.map((iso, index) => {
+                   const t = new Date(iso).getTime();
+                   const ratio = (t - startTime) / (endTime - startTime);
+                    const xPos = ratio * graphWidth;
+                    return (
+                     <React.Fragment key={index}>
+                       <Rect x={xPos} y={5} width={2.5}  height={GRAPH_HEIGHT - 20}  fill="#FF6347"/>
+                  <SvgText x={xPos + 2}     y={GRAPH_HEIGHT}  fontSize="9" fill="#444" textAnchor="middle">
+                    {new Date(iso).toLocaleTimeString('th-TH', { hour12:false })}
+                  </SvgText>
+                  </React.Fragment>);
+                 })}
+                </Group>       
             </Svg>
-             {/* แสดงเวลาเริ่มต้นและสิ้นสุด */}
+
             <View style={styles.graphTimeLabels}>
-                <Text style={styles.playerTimeText}>0:00</Text>
-                <Text style={styles.playerTimeText}>{formatDuration(totalDurationMillis)}</Text>
+                <Text style={styles.playerTimeText}>{formatClock(timestamps[0])}</Text>
+                <Text style={styles.playerTimeText}>{formatClock(timestamps[timestamps.length - 1])}</Text>
             </View>
         </View>
     );
@@ -119,7 +129,7 @@ export default function SnoringListItem({
         <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>ระยะเวลา:</Text>
             <Text style={styles.detailValue}>
-             {formatDuration(item.duration ?? 0)}
+             {formatDuration(item.duration_millis ?? 0)}
             </Text>
         </View>     
         <View style={styles.detailRow}>

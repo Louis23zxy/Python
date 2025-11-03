@@ -61,9 +61,10 @@ export default function SnoringAnalyzer() {
       fileUri: `${API_URL}${item.file_url}`,
       timestamp: item.created_at,
       date: formattedDate, // ✅ เพิ่มบรรทัดนี้
-      duration: item.duration_millis,
+      duration_millis: item.duration_millis ?? (item.duration * 1000) ?? 0,
       snoringEventsCount: item.snoring_count || 0,
-      apneaEventsCount: 0
+      apneaEventsCount: 0,
+      snoringAbsoluteTimestamps: item.snoring_absolute_timestamps || []
     };
   });
       setAnalysisData(mappedData);
