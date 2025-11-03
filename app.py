@@ -8,7 +8,8 @@ from flask import Flask, request, jsonify, send_from_directory
 from tensorflow.keras.models import load_model
 from datetime import datetime
 from pydub import AudioSegment
-from flask_cors import CORS # ต้องเพิ่ม CORS เพื่อให้แอปมือถือเข้าถึงได้
+from datetime import datetime, timedelta
+from flask_cors import CORS 
 
 app = Flask(__name__)
 CORS(app) # เปิดใช้งาน CORS สำหรับทุก routes
@@ -117,11 +118,14 @@ def analyze_audio():
         apnea_events_count = 0
         silence_threshold = 0.01      
         min_silence_duration = 5 
+        snoring_times_seconds = []
             
 
         for idx, prob in enumerate(predictions):
             if prob[0] > 0.5:
                 snoring_count += 1
+                relative_time = idx * chunk_size # chunk_size = 4.0 วินาที
+                snoring_times_seconds.append(relative_time)
                 chunk = y[idx * chunk_samples : (idx + 1) * chunk_samples]
                 rms = np.sqrt(np.mean(chunk**2))
                 snore_db = 20 * np.log10(rms + 1e-6)
@@ -154,12 +158,22 @@ def analyze_audio():
         audio_segment.export(file_path, format="wav")
         file_url = f"/uploads/{file_name}"
 
+        current_time = datetime.now()
+        snoring_absolute_timestamps = []
+        if snoring_times_seconds:
+            for relative_sec in snoring_times_seconds:
+                # แปลงเวลาสัมพัทธ์เป็น timedelta
+                time_offset = timedelta(seconds=relative_sec)
+                # เวลาสัมบูรณ์ = เวลาเริ่มต้น + เวลาชดเชย
+                absolute_time = current_time + time_offset
+                snoring_absolute_timestamps.append(absolute_time)
+
         cur.execute("""
             INSERT INTO recordings (
-                user_uid, name, created_at, snoring_count, loudest_snore_db, file_url,duration_millis,apnea_events_count
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                user_uid, name, created_at, snoring_count, loudest_snore_db, file_url,duration_millis,apnea_events_count, snoring_absolute_timestamps
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
-        """, (user_uid, name, datetime.now(),snoring_count, loudest_snore_db,file_url, duration_millis,apnea_events_count))
+        """, (user_uid, name, current_time, snoring_count, loudest_snore_db, file_url, duration_millis, apnea_events_count, snoring_absolute_timestamps))
         new_id = cur.fetchone()[0]
         conn.commit()
         cur.close()
@@ -173,7 +187,8 @@ def analyze_audio():
             "loudest_snore_db": loudest_snore_db,
             "apnea_events_count": apnea_events_count,
             "file_url": file_url,
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
+            "snoring_absolute_timestamps": [t.isoformat() for t in snoring_absolute_timestamps]
         })
 
     except Exception as e:
@@ -319,7 +334,7 @@ def get_recordings(user_uid):
             
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, name, snoring_count, loudest_snore_db, file_url, created_at,duration_millis
+            SELECT id, name, snoring_count, loudest_snore_db, file_url, created_at,duration_millis, snoring_absolute_timestamps 
             FROM recordings
             WHERE user_uid = %s
             ORDER BY created_at DESC;
@@ -336,7 +351,8 @@ def get_recordings(user_uid):
                 "loudest_snore_db": r[3],
                 "file_url": r[4],
                 "created_at": r[5].isoformat(),
-                "duration_millis": r[6]
+                "duration_millis": r[6],
+                "snoring_absolute_timestamps": [t.isoformat() for t in r[7]] if r[7] else []
             }
             for r in rows
         ]
