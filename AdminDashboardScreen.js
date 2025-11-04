@@ -1,194 +1,203 @@
-// AdminDashboardScreen.js (ฉบับปรับปรุง)
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
-// *** เพิ่มการ Import ที่จำเป็น ***
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { signOut } from 'firebase/auth'; 
-import { auth } from './firebase'; 
-// ------------------------------------
-import UserListItem from './components/UserListItem'; 
-const mockUsers = [
-  {
-    id: 1,
-    firstName: "สมชาย",
-    lastName: "ใจดี",
-    isDeleted: false,
-    usageLogs: [
-      { date: "2025-10-25", duration: 3600 }, // 1 ชม.
-      { date: "2025-10-28", duration: 7200 }, // 2 ชม.
-      { date: "2025-10-31", duration: 1200 }, // 20 นาที (ล่าสุด)
-    ],
-  },
-  {
-    id: 2,
-    firstName: "มานี",
-    lastName: "มีสุข",
-    isDeleted: true, // Soft Delete
-    usageLogs: [
-      { date: "2025-09-01", duration: 18000 },
-      { date: "2025-09-10", duration: 3600 }, 
-    ],
-  },
-  {
-    id: 3,
-    firstName: "ชูใจ",
-    lastName: "มั่นคง",
-    isDeleted: false,
-    usageLogs: [{ date: "2025-11-01", duration: 600 }], // 10 นาที (ล่าสุด)
-  },
-];
-
-const calculateDaysUsed = (logs) => {
-  if (logs.length === 0) return 0;
-  const uniqueDates = new Set(logs.map(log => log.date));
-  return uniqueDates.size;
-};
-
-const formatTotalDuration = (logs) => {
-  if (logs.length === 0) return "0 นาที";
-  const totalSeconds = logs.reduce((sum, log) => sum + log.duration, 0);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-
-  let result = [];
-  if (hours > 0) result.push(`${hours} ชม.`);
-  if (minutes > 0 || result.length === 0) result.push(`${minutes} น. `);
-
-  return result.join(" ");
-};
-
-const processUsersData = (users) => {
-  return users.map(user => {
-    const totalDurationString = formatTotalDuration(user.usageLogs);
-    const daysUsed = calculateDaysUsed(user.usageLogs);
-    const lastUsedDate = user.usageLogs.length > 0
-      ? user.usageLogs.reduce((latest, log) => (log.date > latest ? log.date : latest), user.usageLogs[0].date)
-      : 'N/A';
-
-    return {
-      ...user,
-      fullName: `${user.firstName} ${user.lastName}`,
-      lastUsed: lastUsedDate,
-      daysUsed: daysUsed,
-      totalDuration: totalDurationString,
-    };
-  });
-};
-// UserListItem Component ที่ถูกแยกออกไป (นำออกไปจากไฟล์นี้)
-// ...
+import UserListItem from './components/UserListItem';
+const BASE_URL = "http://172.16.16.12:5000";
+const ADMIN_EMAIL = 'admin@mysnore.com'; 
 
 const AdminDashboardScreen = () => {
-  const navigation = useNavigation(); // *** ต้องใช้ useNavigation ***
-  const data = processUsersData(mockUsers);
+    const navigation = useNavigation();
+    const [users, setUsers] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [errorMessage, setErrorMessage] = useState('');
 
-  // *** 🔑 ฟังก์ชันจัดการการออกจากระบบ ***
-  const handleLogout = async () => {
-    Alert.alert(
-      "ออกจากระบบ",
-      "คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?",
-      [
-        { text: "ยกเลิก", style: "cancel" },
-        { 
-          text: "ออกจากระบบ", 
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await signOut(auth);
-              // ใช้ replace เพื่อแทนที่หน้าปัจจุบันด้วย SignInScreen (ป้องกันการกดปุ่ม Back)
-              navigation.replace('SignIn'); 
-            } catch (error) {
-              Alert.alert("ข้อผิดพลาด", "ไม่สามารถออกจากระบบได้: " + error.message);
+    const formatDuration = (ms) => {
+        if (!ms || ms === 0) return '00:00:00';
+        const totalSeconds = Math.floor(ms / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        const pad = (num) => String(num).padStart(2, '0');
+        return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    };
+    const fetchUsers = useCallback(async () => {
+        setIsLoading(true);
+        setErrorMessage('');
+        try {
+            const response = await fetch(`${BASE_URL}/admin/get-all-user-stats`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-          }
-        },
-      ]
+            const data = await response.json();
+            const formattedUsers = data.map(user => ({
+                ...user,
+                lastUsed: user.lastUsed !== 'N/A' 
+                    ? new Date(user.lastUsed).toLocaleDateString('th-TH', { 
+                        year: 'numeric', month: 'short', day: 'numeric', 
+                        hour: '2-digit', minute: '2-digit' 
+                    })
+                    : 'N/A',
+                totalDurationFormatted: formatDuration(user.totalDurationMillis),
+            }));
+            setUsers(formattedUsers);
+        } catch (error) {
+            console.error("Error fetching users:", error);
+            setErrorMessage('ไม่สามารถโหลดข้อมูลผู้ใช้ได้: ' + error.message);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+    const handleLogout = () => {
+        Alert.alert(
+            'ออกจากระบบ',
+            'คุณต้องการออกจากระบบหรือไม่?',
+            [
+                { text: 'ยกเลิก', style: 'cancel' },
+                {
+                    text: 'ออกจากระบบ',
+                    style: 'destructive',
+                    onPress: () => {
+                        navigation.reset({
+                            index: 0,
+                            routes: [{ name: 'SignIn' }], 
+                        });
+                    },
+                },
+            ]
+        );
+    };
+
+    const toggleSoftDelete = async (userUid, isCurrentlyDeleted) => {
+        const newStatus = !isCurrentlyDeleted;
+        const action = newStatus ? 'ระงับ' : 'กู้คืน';
+
+        try {
+            const response = await fetch(`${BASE_URL}/admin/user-profile/${userUid}`, {
+                method: 'PUT',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ is_deleted: newStatus }),
+            });
+
+            const text = await response.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                throw new Error(`Invalid JSON response: ${text}`);
+            }
+
+            if (!response.ok) throw new Error(data.message || 'เกิดข้อผิดพลาด');
+
+            Alert.alert('สำเร็จ', data.message);
+            fetchUsers();
+        } catch (error) {
+            console.error(`Error toggling status for ${userUid}:`, error);
+            Alert.alert('ข้อผิดพลาด', `ไม่สามารถ${action}บัญชีได้: ${error.message}`);
+        }
+    };
+    useEffect(() => {
+        fetchUsers();
+    }, [fetchUsers]);
+
+    const renderUserItem = ({ item }) => (
+        <UserListItem user={item} onAction={toggleSoftDelete} />
     );
-  };
-  // --------------------------------------
-
-  // ส่วนหัวของแดชบอร์ด
-  const renderHeader = () => (
-    <View style={styles.headerContainer}>
-        <View style={styles.headerTitleRow}>
-            <View>
-                <Text style={styles.title}>แผงควบคุมผู้ดูแลระบบ</Text>
-                <Text style={styles.subtitle}>จัดการบัญชีผู้ใช้และการใช้งาน</Text>
+    if (isLoading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#1F4E79" />
+                <Text style={styles.loadingText}>กำลังโหลดข้อมูล...</Text>
             </View>
-            {/* *** ปุ่มออกจากระบบ *** */}
-            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                <Text style={styles.logoutButtonText}>ออกจากระบบ</Text>
-            </TouchableOpacity>
-        </View>
-      <View style={styles.statsBar}>
-        <Text style={styles.statText}>รวม: {mockUsers.length} คน</Text>
-        <Text style={styles.statText}>Active: {mockUsers.filter(u => !u.isDeleted).length} คน</Text>
-      </View>
-    </View>
-  );
+        );
+    }
+    if (errorMessage) {
+        return (
+            <View style={styles.loadingContainer}>
+                <Text style={styles.errorText}>{errorMessage}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={fetchUsers}>
+                    <Text style={styles.retryButtonText}>ลองใหม่</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+    return (
+        <View style={styles.container}>
+            <View style={styles.headerRow}>
+                <Text style={styles.header}>Admin Dashboard: User Statistics</Text>
+                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                    <Text style={styles.logoutText}>ออกจากระบบ</Text>
+                </TouchableOpacity>
+            </View>
 
-  return (
-    <FlatList
-      data={data}
-      keyExtractor={(item) => item.id.toString()}
-      renderItem={({ item }) => <UserListItem user={item} />}
-      ListHeaderComponent={renderHeader}
-      contentContainerStyle={styles.listContent}
-    />
-  );
+            <FlatList
+                data={users}
+                keyExtractor={(item) => item.user_uid}
+                renderItem={renderUserItem}
+                contentContainerStyle={styles.listContainer}
+            />
+        </View>
+    );
 };
+
 const styles = StyleSheet.create({
-  listContent: {
-    padding: 15,
-    backgroundColor: '#f5f5f5', // พื้นหลังสีเทาอ่อน
-  },
-  headerContainer: {
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-    marginBottom: 10,
-  },
-  // *** เพิ่ม Style สำหรับปุ่ม Logout ***
-  headerTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  logoutButton: {
-    backgroundColor: '#dc3545', // แดง
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 5,
-  },
-  logoutButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  // -----------------------------------
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 5,
-  },
-  statsBar: {
-    flexDirection: 'row',
-    marginTop: 15,
-    gap: 20,
-  },
-  statText: {
-    fontSize: 12,
-    color: '#007bff',
-    backgroundColor: '#e6f2ff',
-    padding: 5,
-    borderRadius: 3,
-    fontWeight: '600',
-  },
-  // ลบ styles รายการผู้ใช้ (List Item) ออกจากไฟล์นี้แล้ว
+    container: {
+        flex: 1,
+        padding: 20,
+        backgroundColor: '#F5F5F5',
+    },
+    headerRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    header: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#1F4E79',
+    },
+    logoutButton: {
+        backgroundColor: '#dc3545',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+    },
+    logoutText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    listContainer: {
+        paddingBottom: 20,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 10,
+        fontSize: 16,
+        color: '#1F4E79',
+    },
+    errorText: {
+        fontSize: 16,
+        color: 'red',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    retryButton: {
+        backgroundColor: '#1F4E79',
+        padding: 10,
+        borderRadius: 8,
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontWeight: 'bold',
+    },
 });
 
 export default AdminDashboardScreen;

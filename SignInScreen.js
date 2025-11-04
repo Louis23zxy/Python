@@ -1,11 +1,10 @@
-// src/SignInScreen.js
-
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ActivityIndicator,Alert  } from 'react-native';
 import { useNavigation } from '@react-navigation/native'; 
 import { signInWithEmailAndPassword } from 'firebase/auth'; 
 import { auth } from './firebase'; 
 const LogoImage = require('../assets/Logo.jpg');
+const BASE_URL = 'http://172.16.16.12:5000'; 
 const SignInScreen = () => {
     const navigation = useNavigation();
     const [email, setEmail] = useState('');
@@ -24,14 +23,36 @@ const SignInScreen = () => {
         setIsLoading(true);
 
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
             if (email === ADMIN_EMAIL) {
-                // *** 🔑 แก้ไข: ใช้ navigation.reset เพื่อบังคับไปหน้า Admin ***
                 navigation.reset({
                     index: 0,
                     routes: [{ name: 'แอดมิน' }], 
                 });
-        } 
+            } else {
+                const response = await fetch(`${BASE_URL}/user-status/${user.uid}`);
+                if (!response.ok) {
+                    throw new Error("ไม่สามารถตรวจสอบสถานะบัญชีได้");
+                }
+                
+                const data = await response.json();
+                
+                if (data.isDeleted) {
+                    await auth.signOut(); 
+                    Alert.alert(
+                        "บัญชีถูกระงับการใช้งาน",
+                        "บัญชีของคุณถูกระงับโดยผู้ดูแลระบบ กรุณาติดต่อฝ่ายสนับสนุน"
+                    );
+                    setIsLoading(false);
+                    return;
+                }
+                navigation.reset({
+                  index: 0,
+                 routes: [{ name: 'AppTabs' }], 
+                });
+
+            }
         } catch (error) {
             let message = 'เกิดข้อผิดพลาดในการเข้าสู่ระบบที่ไม่ทราบสาเหตุ';
             switch (error.code) {
@@ -47,7 +68,8 @@ const SignInScreen = () => {
                     message = 'คุณพยายามเข้าสู่ระบบมากเกินไป โปรดลองอีกครั้งภายหลัง';
                     break;
                 default:
-                    console.error("Firebase Sign In Error:", error.message);
+                    Alert.alert('เกิดข้อผิดพลาด', 'กรุณาติดต่อผู้ให้บริการ');
+                    break;
 
             }
             setErrorMessage(message);

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from flask_cors import CORS 
 
 app = Flask(__name__)
-CORS(app) # เปิดใช้งาน CORS สำหรับทุก routes
+CORS(app) 
 
 # ✅ Path โมเดล
 MODEL_PATH = r"C:\Users\Naruethep Sovajan\Desktop\VoiceRe\SaveModel\snoring_cnn_classifier_model.h5"
@@ -120,33 +120,30 @@ def analyze_audio():
         min_silence_duration = 5 
         snoring_times_seconds = []
             
+        for i in range(0, len(y), sr):  
+            chunk = y[i:i + sr]
+            rms = np.sqrt(np.mean(chunk**2)) 
+
+            if rms < silence_threshold:
+                silence_duration += 1
+            else:
+                silence_duration = 0
+                
+            if silence_duration == min_silence_duration:
+                apnea_events_count += 1
+            
+            db_level = 20 * np.log10(rms + 1e-6) 
+            snore_db_scaled = 100 + db_level     
+            loudest_snore_db = max(loudest_snore_db, snore_db_scaled) 
 
         for idx, prob in enumerate(predictions):
             if prob[0] > 0.5:
                 snoring_count += 1
-                relative_time = idx * chunk_size # chunk_size = 4.0 วินาที
+                relative_time = idx * 4.0 
                 snoring_times_seconds.append(relative_time)
-                chunk = y[idx * chunk_samples : (idx + 1) * chunk_samples]
-                rms = np.sqrt(np.mean(chunk**2))
-                snore_db = 20 * np.log10(rms + 1e-6)
-                snore_db_scaled = 100 + snore_db  # ทำให้เป็นค่าบวกอ่านง่าย
-                loudest_snore_db = max(loudest_snore_db, snore_db_scaled)
-
-        snoring_count = int(snoring_count)
-        loudest_snore_db = float(round(loudest_snore_db, 2)) # 5.2 คำนวณช่วงที่เงียบ (หยุดหายใจ)
-         
-        for i in range(0, len(y), sr):  # ตรวจทีละ 1 วินาที
-          chunk = y[i:i + sr]
-        rms = np.sqrt(np.mean(chunk**2))  # ค่าความดังเฉลี่ยของเสียงใน 1 วิ
-        if rms < silence_threshold:
-         silence_duration += 1
-        if silence_duration >= min_silence_duration:
-            apnea_events_count += 1
-            silence_duration = 0  # รีเซ็ตเพื่อเริ่มนับช่วงใหม่
-        else:
-         silence_duration = 0
-  
-        # 6. บันทึกลงฐานข้อมูล
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"error": "Database error", "message": "Failed to connect to the database."}), 500
         conn = get_db_connection()
         if not conn:
             return jsonify({"error": "Database error", "message": "Failed to connect to the database."}), 500
@@ -197,8 +194,6 @@ def analyze_audio():
         print(f"Error during audio analysis: {e}")
         return jsonify({"error": "Internal server error during analysis", "message": str(e)}), 500
 
-    
-
 @app.route("/save-user-profile", methods=["POST"])
 def save_user_profiles():
     """Receives user profiles data and saves it to the user_profile table."""
@@ -211,27 +206,22 @@ def save_user_profiles():
         user_uid = data.get("uid")
         first_name = data.get("firstName")
         last_name = data.get("lastName")
-        sex = data.get("gender") # ในโค้ด JS เดิมใช้ 'gender'
+        sex = data.get("gender")
 
         if not all([user_uid, first_name, last_name, sex]):
-            # phone_number เป็น optional ในการเช็คเบื้องต้น
             return jsonify({"error": "Invalid input", "message": "Missing required profile fields (uid, firstName, lastName, gender)."}), 400
 
         cur = conn.cursor()
-
-        # ⚠️ ตรวจสอบว่าชื่อคอลัมน์ใน SQL ตรงกับตาราง user_profile:
-        # user_uid, first_name, last_name, sex, phone_number, created_at
         cur.execute(
             """
-            INSERT INTO user_profiles (user_uid, first_name, last_name, sex, created_at)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO user_profiles (user_uid, first_name, last_name, sex, created_at, is_deleted) 
+            VALUES (%s, %s, %s, %s, %s, FALSE)
             ON CONFLICT (user_uid) DO UPDATE SET
                 first_name = EXCLUDED.first_name,
                 last_name = EXCLUDED.last_name,
                 sex = EXCLUDED.sex
             RETURNING user_uid;
             """,
-            # 💡 ใช้ 'gender' จาก JS มาใส่ในคอลัมน์ 'sex'
             (user_uid, first_name, last_name, sex, datetime.now()) 
         )   
         conn.commit()
@@ -247,7 +237,6 @@ def save_user_profiles():
         print(f"Error saving user profile: {e}")
         return jsonify({"error": "Internal server error", "message": str(e)}), 500
 
-# ... (โค้ดส่วนที่เหลือของ app.py เหมือนเดิม) ...
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     """
@@ -304,7 +293,9 @@ def get_recording_stats(uid):
         cur.execute("""
             SELECT 
                 COUNT(DISTINCT DATE(created_at)) AS total_days,
-                COALESCE(SUM(duration_millis) / 60000.0 / NULLIF(COUNT(DISTINCT DATE(created_at)), 0), 0) AS avg_duration
+                COALESCE(SUM(duration_millis) / 60000.0 / NULLIF(COUNT(DISTINCT DATE(created_at)), 0), 0) AS avg_duration,
+                COALESCE(AVG(apnea_events_count), 0) AS avg_apnea_count, 
+                COALESCE(MAX(loudest_snore_db), 0) AS max_snore_db
             FROM recordings
             WHERE user_uid = %s;
         """, (uid,))
@@ -315,7 +306,9 @@ def get_recording_stats(uid):
 
         return jsonify({
             'total_days': row[0] or 0,
-            'avg_duration': round(row[1] or 0, 2)
+            'avg_duration': round(row[1] or 0, 2),
+            'avg_apnea_count': round(row[2] or 0, 2),  
+            'max_snore_db': round(row[3] or 0, 2)      
         })
 
     except Exception as e:
@@ -360,6 +353,138 @@ def get_recordings(user_uid):
     except Exception as e:
         print(f"Error fetching recordings: {e}")
         return jsonify({"error": "Internal server error", "message": "Failed to fetch recordings."}), 500
+    
+@app.route("/admin/get-all-user-stats", methods=["GET"])
+def get_all_user_stats():
+    """
+    Retrieves all user profiles along with their aggregated recording statistics 
+    and the is_deleted status for the Admin Dashboard.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database error", "message": "Failed to connect to the database."}), 500
+
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 
+                up.user_uid,
+                up.first_name,
+                up.last_name,
+                up.is_deleted,
+                MAX(r.created_at) AS last_used,
+                COUNT(DISTINCT DATE(r.created_at)) AS days_used,
+                COALESCE(SUM(r.duration_millis), 0) AS total_duration_millis
+                    
+            FROM user_profiles up
+            LEFT JOIN recordings r ON up.user_uid = r.user_uid
+            -- is_deleted ต้องอยู่ใน GROUP BY เนื่องจากถูก SELECT มา
+            GROUP BY up.user_uid, up.first_name, up.last_name, up.is_deleted
+            ORDER BY last_used DESC NULLS LAST;
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        results = [
+            {
+                "id": r[0],
+                "user_uid": r[0],
+                "firstName": r[1],
+                "lastName": r[2],
+                "fullName": f"{r[1]} {r[2]}",
+                "isDeleted": r[3], # 💡 Index 3: is_deleted (ถูกต้อง)
+                "lastUsed": r[4].isoformat() if r[4] else 'N/A', # 🔑 แก้ไข: ย้ายจาก r[3] เป็น r[4]
+                "daysUsed": int(r[5] or 0), # 🔑 แก้ไข: ย้ายจาก r[4] เป็น r[5]
+                "totalDurationMillis": int(r[6] or 0) # 🔑 แก้ไข: ย้ายจาก r[5] เป็น r[6]
+            }
+            for r in rows
+        ]
+
+        return jsonify(results), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        if conn: conn.rollback()
+        print(f"Error fetching admin user stats: {e}")
+        return jsonify({"error": "Internal server error", "message": str(e)}), 500
+
+@app.route('/admin/user-profile/<uid>', methods=['PUT'])
+def update_user_profile(uid):
+    """
+    ✅ อัปเดตสถานะการระงับบัญชี (is_deleted) ของผู้ใช้
+    เรียกจากหน้า AdminDashboardScreen
+    """
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"message": "Database connection failed"}), 500
+
+    try:
+        data = request.get_json()
+        if not data or 'is_deleted' not in data:
+            return jsonify({"message": "Missing required field: is_deleted"}), 400
+
+        is_deleted = data['is_deleted']
+
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE user_profiles 
+            SET is_deleted = %s
+            WHERE user_uid = %s
+            RETURNING user_uid;
+        """, (is_deleted, uid))
+
+        updated = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if not updated:
+            return jsonify({"message": f"User {uid} not found"}), 404
+
+        action = "ระงับ" if is_deleted else "กู้คืน"
+        return jsonify({
+            "message": f"บัญชี {uid} ถูก{action}เรียบร้อยแล้ว",
+            "is_deleted": is_deleted
+        }), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        if conn: conn.rollback()
+        return jsonify({"message": f"Error updating user status: {str(e)}"}), 500
+
+@app.route("/user-status/<uid>", methods=["GET"])
+def get_user_status(uid):
+    """
+    ใช้สำหรับให้ฝั่ง Mobile App ตรวจสอบสถานะบัญชี (ถูกระงับหรือไม่)
+    """
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"message": "Database connection failed"}), 500
+
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT is_deleted
+            FROM user_profiles
+            WHERE user_uid = %s;
+        """, (uid,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not row:
+            return jsonify({"message": "User not found", "isDeleted": False}), 404
+
+        return jsonify({"isDeleted": row[0]}), 200
+
+    except Exception as e:
+        print("Error fetching user status:", e)
+        if conn:
+            conn.close()
+        return jsonify({"message": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

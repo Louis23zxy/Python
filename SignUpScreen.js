@@ -3,9 +3,18 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Activi
 import { useNavigation } from '@react-navigation/native';
 import { createUserWithEmailAndPassword } from 'firebase/auth'; 
 import { auth } from './firebase'; 
-import { Ionicons } from '@expo/vector-icons';
 
 const PROFILE_API_URL = 'http://172.16.16.12:5000/save-user-profile'; 
+const validateEmail = (email) => {
+    // Regex ที่รองรับ .com, .net, หรือ .co.th (i = case-insensitive)
+    const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*\.(com|net|co\.th)$/i; 
+    
+    if (!emailRegex.test(email)) {
+        return "รูปแบบอีเมลไม่ถูกต้อง หรือต้องเป็นโดเมน .com, .net, .co.th เท่านั้น";
+    }
+    return true;
+};
+const specialCharRegex = /[!@#$%]/;
 const validatePassword = (password) => {
     if (password.length < 8) {
         return "รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร";
@@ -16,8 +25,11 @@ const validatePassword = (password) => {
     if (!/[a-z]/.test(password)) {
         return "รหัสผ่านต้องมีอักษรพิมพ์เล็กอย่างน้อย 1 ตัว";
     }
+    if (!specialCharRegex.test(password)) {
+    return "รหัสผ่านต้องมีอักษรพิเศษอย่างน้อย 1 ตัว (เช่น !@#$%)"; 
+    } 
     if (!/[0-9]/.test(password)) {
-        return "รหัสผ่านต้องมีตัวเลขอย่างน้อย 1 ตัว";
+        return "รหัสผ่านต้องมีตัวเลขอย่างน้อย 1 ตัว"; 
     }
     return true;
 };
@@ -30,11 +42,7 @@ const SignUpScreen = () => {
     const [lastName, setLastName] = useState('');
     const [gender, setGender] = useState(null); 
     const [loading, setLoading] = useState(false);
-    
-    // 💡 State สำหรับข้อผิดพลาดทั่วไป (เช่น Firebase Errors)
     const [generalError, setGeneralError] = useState(''); 
-    
-    // 💡 State สำหรับข้อผิดพลาดเฉพาะช่อง (Inline Validation)
     const [validationErrors, setValidationErrors] = useState({});
 
     const navigation = useNavigation();
@@ -55,7 +63,6 @@ const SignUpScreen = () => {
     };
 
     const saveUserProfile = async (uid) => {
-        // ... (โค้ดเดิม)
         try {
             const response = await fetch(PROFILE_API_URL, {
                 method: 'POST',
@@ -84,17 +91,20 @@ const SignUpScreen = () => {
 
     const handleSignUp = async () => {
         setGeneralError(''); 
-        setValidationErrors({}); // 💡 ล้างข้อผิดพลาดทั้งหมดก่อนเริ่ม
+        setValidationErrors({}); 
         if (loading) return;
 
         let errors = {};
         let hasErrors = false;
-
-        // 1. Validation Logic: ตรวจสอบทุกช่องและบันทึกข้อผิดพลาด
         if (!firstName) { errors.firstName = "กรุณากรอกชื่อจริง"; hasErrors = true; }
         if (!lastName) { errors.lastName = "กรุณากรอกนามสกุล"; hasErrors = true; }
         if (!gender) { errors.gender = "กรุณาเลือกเพศ"; hasErrors = true; }
         if (!email) { errors.email = "กรุณากรอกอีเมล"; hasErrors = true; }
+        const emailValidationResult = validateEmail(email);
+        if (email !== '' && emailValidationResult !== true) {
+            errors.email = emailValidationResult;
+            hasErrors = true;
+        }
         if (!password) { errors.password = "กรุณากรอกรหัสผ่าน"; hasErrors = true; }
         if (!confirmPassword) { errors.confirmPassword = "กรุณายืนยันรหัสผ่าน"; hasErrors = true; }
 
@@ -108,14 +118,11 @@ const SignUpScreen = () => {
             errors.password = passwordValidationResult;
             hasErrors = true;
         }
-
-        // 2. ถ้ามีข้อผิดพลาดใด ๆ ให้อัปเดต State และหยุด
         if (hasErrors) {
             setValidationErrors(errors);
             return;
         }
         
-        // 3. เริ่มกระบวนการลงทะเบียน
         setLoading(true);
 
         try {
@@ -145,8 +152,6 @@ const SignUpScreen = () => {
             setLoading(false);
         }
     };
-
-    // 💡 HELPER Component สำหรับแสดง Error ใต้ Input
     const ErrorText = ({ field }) => (
         validationErrors[field] ? (
             <Text style={styles.errorTextInline}>{validationErrors[field]}</Text>
@@ -156,22 +161,17 @@ const SignUpScreen = () => {
     return (
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
             <View style={styles.iconContainer}>
-                 <Ionicons name="body-outline" size={70} color="#388E3C" />
             </View>
             <Text style={styles.title}>สร้างบัญชีใหม่</Text>
-
-            {/* 💡 แสดงข้อผิดพลาดทั่วไป (Firebase / Profile Save Fail) */}
             {generalError ? <Text style={styles.errorTextGeneral}>{generalError}</Text> : null}
-
-            {/* 🔑 ส่วนกรอกข้อมูล */}
             <TextInput
-                style={[styles.input, validationErrors.firstName && styles.inputError]} // 💡 เพิ่มสไตล์ Input Error
+                style={[styles.input, validationErrors.firstName && styles.inputError]} 
                 placeholder="ชื่อจริง (First Name)"
                 value={firstName}
                 onChangeText={(text) => {setFirstName(text); setGeneralError('');}} 
                 editable={!loading}
             />
-            <ErrorText field="firstName" /> {/* 💡 แสดง Error Inline */}
+            <ErrorText field="firstName" />
 
             <TextInput
                 style={[styles.input, validationErrors.lastName && styles.inputError]}
@@ -181,15 +181,13 @@ const SignUpScreen = () => {
                 editable={!loading}
             />
             <ErrorText field="lastName" />
-
-            {/* 🔑 ส่วนเลือกเพศ (Gender Selection) */}
             <View style={{width: '100%'}}>
                  <Text style={styles.label}>เพศ</Text>
                  <View style={styles.genderContainer}>
                     <GenderButton label="ชาย" value="Male" />
                     <GenderButton label="หญิง" value="Female" />
                 </View>
-                <ErrorText field="gender" /> {/* 💡 แสดง Error Inline */}
+                <ErrorText field="gender" /> 
             </View>
 
             <TextInput
@@ -222,9 +220,6 @@ const SignUpScreen = () => {
                 editable={!loading}
             />
             <ErrorText field="confirmPassword" />
-
-
-            {/* 🔑 ปุ่มลงทะเบียน */}
             <TouchableOpacity 
                 style={[styles.button, loading && styles.buttonDisabled]}
                 onPress={handleSignUp} 
@@ -238,7 +233,7 @@ const SignUpScreen = () => {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.loginLink} onPress={() => navigation.navigate('SignIn')} disabled={loading}>
-                <Text style={styles.loginText}>มีบัญชีอยู่แล้ว? <Text style={{fontWeight: 'bold', color: '#388E3C'}}>เข้าสู่ระบบ</Text></Text>
+                <Text style={styles.loginText}>มีบัญชีอยู่แล้ว? <Text style={{fontWeight: 'bold', color: '#007AFF'}}>เข้าสู่ระบบ</Text></Text>
             </TouchableOpacity>
         </ScrollView>
     );
@@ -248,22 +243,21 @@ const styles = StyleSheet.create({
     container: {
         flexGrow: 1,
         padding: 25,
-        backgroundColor: '#f4f4f4ff',
+        backgroundColor: '#afcdedff',
         alignItems: 'center',
     },
     iconContainer: {
         marginBottom: 10,
-        backgroundColor: '#DCEDC8', // Lightest green background
+        backgroundColor: '#DCEDC8', 
         borderRadius: 50,
         padding: 10,
     },
     title: {
         fontSize: 28,
         fontWeight: 'bold',
-        color: '#000000ff', // Dark green color
+        color: '#000000ff', 
         marginBottom: 30,
     },
-    // 💡 [สไตล์ใหม่] สำหรับข้อความผิดพลาดทั่วไป (General Error)
     errorTextGeneral: { 
         color: '#D32F2F', 
         marginBottom: 15,
@@ -272,28 +266,26 @@ const styles = StyleSheet.create({
         width: '100%',
         paddingHorizontal: 10
     },
-    // 💡 [สไตล์ใหม่] สำหรับข้อความผิดพลาดใต้ Input (Inline Error)
     errorTextInline: { 
         color: '#D32F2F', 
         fontSize: 12,
         marginBottom: 15,
         alignSelf: 'flex-start',
         paddingLeft: 5,
-        marginTop: -10, // เลื่อนขึ้นให้ใกล้ input มากขึ้น
+        marginTop: -10, 
     },
     input: {
         width: '100%',
         padding: 15,
-        backgroundColor: '#F1F8E9', // Light green background
+        backgroundColor: '#F1F8E9',
         borderRadius: 10,
         marginBottom: 15,
         fontSize: 16,
         borderWidth: 1,
         borderColor: '#E0E0E0',
     },
-    // 💡 [สไตล์ใหม่] Input เมื่อเกิด Error
     inputError: {
-        borderColor: '#D32F2F', // สีแดงเมื่อมี Error
+        borderColor: '#D32F2F', 
         borderWidth: 2,
     },
     label: {
@@ -321,8 +313,8 @@ const styles = StyleSheet.create({
         borderColor: '#E0E0E0',
     },
     genderButtonActive: {
-        backgroundColor: '#8BC34A', 
-        borderColor: '#388E3C',
+        backgroundColor: '#007AFF', 
+        borderColor: '#007AFF',
     },
     genderText: {
         color: '#333',
@@ -335,7 +327,7 @@ const styles = StyleSheet.create({
     },
     button: {
         width: '100%',
-        backgroundColor: '#388E3C', 
+        backgroundColor: '#007AFF', 
         padding: 15,
         borderRadius: 10,
         alignItems: 'center',

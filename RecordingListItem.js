@@ -1,13 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import Svg, { Rect, G as Group, Line, Text as SvgText } from 'react-native-svg';
 
 const { width: screenWidth } = Dimensions.get('window');
-const GRAPH_HEIGHT = 50; 
+const GRAPH_HEIGHT = 140; 
 const GRAPH_MARGIN_HORIZONTAL = 20;
-
 const formatDuration = (millis) => {
   if (millis === null || isNaN(millis)) {
     return "00:00";
@@ -21,77 +20,91 @@ const formatDuration = (millis) => {
   return `${pad(minutes)}:${pad(seconds)}`;
 };
 const SnoringGraph = ({ item }) => {
-    const totalDurationMillis = item.duration_millis ?? 0;
-    const timestamps = item.snoringAbsoluteTimestamps || item.snoring_absolute_timestamps;
-    console.log("timestamps:", item.snoringAbsoluteTimestamps, item.snoring_absolute_timestamps);
-    const graphWidth = screenWidth - (2 * GRAPH_MARGIN_HORIZONTAL);
 
-    if (!timestamps || timestamps.length === 0 || totalDurationMillis === 0 || item.snoringCount === 0) {
-        return (
-            <View style={styles.graphPlaceholder}>
-                <Text style={styles.detailLabel}>ไม่มีข้อมูลการกรนสำหรับแสดงกราฟ</Text>
-            </View>
-        );
-    }
-    const startTime = new Date(timestamps[0]).getTime();
-    const endTime = startTime + totalDurationMillis;
-    const xPositions = timestamps.map(isoTime => {
-    const snoreTime = new Date(isoTime).getTime();
-    const startTime = new Date(timestamps[0]).getTime(); 
-    const relativeMillis = snoreTime - startTime;
-    const endTime   = startTime + item.duration_millis
-    const getX = (iso) => {
-      const t = new Date(iso).getTime()
-      const ratio = (t - startTime) / (endTime - startTime)
-      return ratio * graphWidth
-    }
-    const xPosition = (relativeMillis / totalDurationMillis) * graphWidth;
-    return xPosition;
-})
-    
-    const barWidth = 1.5; // ความหนาแท่งกรน
-    const barHeight = GRAPH_HEIGHT;
-    const barFillColor = "#FF6347"; // สีแดงอมส้ม
-    const formatClock = (isoString) => {
-    const d = new Date(isoString)
-    return d.toLocaleTimeString('th-TH', { hour12: false })}
+  const [tooltip, setTooltip] = useState(null);
 
+  const totalDurationMillis = item.duration_millis ?? 0;
+  const timestamps = item.snoringAbsoluteTimestamps || item.snoring_absolute_timestamps;
+  const graphWidth = screenWidth - (2 * GRAPH_MARGIN_HORIZONTAL);
 
+  if (!timestamps || timestamps.length === 0 || totalDurationMillis === 0 || item.snoringCount === 0) {
     return (
-        <View style={styles.graphContainer}>
-            <Text style={styles.graphTitle}>กิจกรรมการกรนตามช่วงเวลา ({item.snoringCount} ครั้ง)</Text>
-            <Svg height={GRAPH_HEIGHT} width={graphWidth} style={{ alignSelf: 'center' }}>
-                {/* Background Line (แกน X) */}
-                <Line
-                    x1="0"
-                    y1={GRAPH_HEIGHT}
-                    x2={graphWidth}
-                    y2={GRAPH_HEIGHT}
-                    stroke="#ccc"
-                    strokeWidth="1"
-                />
-                <Group>
-                 {timestamps.map((iso, index) => {
-                   const t = new Date(iso).getTime();
-                   const ratio = (t - startTime) / (endTime - startTime);
-                    const xPos = ratio * graphWidth;
-                    return (
-                     <React.Fragment key={index}>
-                       <Rect x={xPos} y={5} width={2.5}  height={GRAPH_HEIGHT - 20}  fill="#FF6347"/>
-                  <SvgText x={xPos + 2}     y={GRAPH_HEIGHT}  fontSize="9" fill="#444" textAnchor="middle">
-                    {new Date(iso).toLocaleTimeString('th-TH', { hour12:false })}
-                  </SvgText>
-                  </React.Fragment>);
-                 })}
-                </Group>       
-            </Svg>
-
-            <View style={styles.graphTimeLabels}>
-                <Text style={styles.playerTimeText}>{formatClock(timestamps[0])}</Text>
-                <Text style={styles.playerTimeText}>{formatClock(timestamps[timestamps.length - 1])}</Text>
-            </View>
-        </View>
+      <View style={styles.graphPlaceholder}>
+        <Text style={styles.detailLabel}>ไม่มีข้อมูลการกรนสำหรับแสดงกราฟ</Text>
+      </View>
     );
+  }
+
+  const startTime = new Date(timestamps[0]).getTime();
+  const endTime   = startTime + totalDurationMillis;
+
+  return (
+    <View style={[styles.graphContainer, { height: GRAPH_HEIGHT + 40 }]}>
+
+  <Svg height={GRAPH_HEIGHT} width={graphWidth}>
+
+    {/* เส้นแกน X */}
+    <Line
+      x1="0"
+      y1={GRAPH_HEIGHT - 10}
+      x2={graphWidth}
+      y2={GRAPH_HEIGHT - 10}
+      stroke="#ccc"
+      strokeWidth="1"
+    />
+
+    <Group>
+      {timestamps.map((iso, index) => {
+        const t = new Date(iso).getTime();
+        const ratio = (t - startTime) / (endTime - startTime);
+        const xPos = ratio * graphWidth;
+        return (
+          <Rect
+            key={index}
+            x={xPos}
+            y={10}
+            width={3}
+            height={GRAPH_HEIGHT - 25}
+            fill="#FF6347"
+            onPressIn={() => setTooltip({ x: xPos, time: iso })}
+          />
+        );
+      })}
+    </Group>
+
+  </Svg>
+
+  {/* เวลาเริ่ม - เวลาจบ */}
+  <View style={{ flexDirection:'row', justifyContent:'space-between', marginTop:4 }}>
+    <Text style={{ fontSize:11, color:'#666' }}>
+      {new Date(timestamps[0]).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})}
+    </Text>
+    <Text style={{ fontSize:11, color:'#666' }}>
+      {new Date(timestamps[timestamps.length - 1]).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})}
+    </Text>
+  </View>
+
+  {/* Tooltip เวลา */}
+  {tooltip && (
+    <View style={{
+      position:'absolute',
+      left: GRAPH_MARGIN_HORIZONTAL + tooltip.x - 25,
+      top:0,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      backgroundColor: 'white',
+      borderWidth: 1,
+      borderColor: '#666',
+      borderRadius: 4
+    }}>
+      <Text style={{ fontSize: 12, color: '#000' }}>
+        {new Date(tooltip.time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true})}
+      </Text>
+    </View>
+  )}
+
+</View>
+  );
 }
 
 export default function SnoringListItem({
@@ -152,7 +165,7 @@ export default function SnoringListItem({
             ? { color: "#666" } 
             : item.loudestSnoreDb >= 40
             ? { color: "red", fontWeight: "bold" } 
-            : { color: "green" } ]}>{item.loudestSnoreDb === -100 ? "ไม่มีข้อมูล" : item.loudestSnoreDb + " dB"}
+            : { color: "green" } ]}>{item.loudestSnoreDb === -100 ? "ไม่มีข้อมูล" : item.loudestSnoreDb.toFixed(2) + " dB"}
           </Text>          
         </View>   
       </TouchableOpacity>
@@ -164,7 +177,7 @@ export default function SnoringListItem({
               <MaterialIcons
                 name={isCurrentItem && isPlaying ? "pause-circle-filled" : "play-circle-filled"}
                 size={60}
-                color="#556B2F"
+                color="#007AFF"
               />
             </TouchableOpacity>
           </View>
@@ -174,9 +187,9 @@ export default function SnoringListItem({
             maximumValue={durationInSeconds} // ✅ ใช้ durationInSeconds
             value={isCurrentItem ? currentPosition : 0}
             onSlidingComplete={onSeek}
-            minimumTrackTintColor="#556B2F"
+            minimumTrackTintColor="#007AFF"
             maximumTrackTintColor="#aaa"
-            thumbTintColor="#556B2F"
+            thumbTintColor="#007AFF"
           />
           <View style={styles.playerTime}>
             <Text style={styles.playerTimeText}>
@@ -196,7 +209,7 @@ export default function SnoringListItem({
 
 const styles = StyleSheet.create({
   listItemContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffffff',
     borderRadius: 15,
     marginVertical: 8,
     padding: 15,
@@ -264,6 +277,12 @@ const styles = StyleSheet.create({
   graphContainer: {
     marginTop: 15,
     paddingHorizontal: GRAPH_MARGIN_HORIZONTAL,
+    paddingVertical: 10,         
+    borderWidth: 2,              
+    borderColor: '#007AFF',         
+    borderRadius: 8,             
+    backgroundColor: '#fff', 
+    overflow: 'hidden',
   },
   graphTitle: {
     fontSize: 14,

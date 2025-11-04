@@ -1,42 +1,56 @@
-// UserListItem.js
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 
-const UserListItem = ({ user }) => {
+// 💡 แก้ไข: รับ prop onAction เข้ามาด้วย
+const UserListItem = ({ user, onAction }) => {
+  // 💡 Destructure properties ใหม่ รวมถึง isDeleted
+  const { fullName, user_uid, lastUsed, daysUsed, totalDurationFormatted, isDeleted } = user;
+  
+  // 💡 กำหนดข้อความและ Style ของปุ่มตามสถานะ isDeleted
+  const actionButtonText = isDeleted ? 'กู้คืน' : 'ระงับ';
+  const actionButtonStyle = isDeleted ? styles.buttonRestore : styles.buttonDelete;
+
   const handleAction = () => {
-    // กำหนดข้อความการดำเนินการและคำเตือนตามสถานะ isDeleted
-    const action = user.isDeleted ? 'กู้คืน' : 'Soft Delete';
+    // 💡 ใช้ Alert เพื่อยืนยันการดำเนินการ
     Alert.alert(
-      `${action} บัญชี`,
-      `คุณต้องการ${action}บัญชีของ ${user.fullName} หรือไม่?`,
+      `${actionButtonText} บัญชี`,
+      `คุณต้องการ${actionButtonText}บัญชีของ ${fullName} (${user_uid}) หรือไม่?`,
       [
         { text: "ยกเลิก", style: "cancel" },
-        // ในสถานการณ์จริง ควรมีการเรียก API/ฟังก์ชันเพื่อดำเนินการ
-        { text: action, onPress: () => console.log(`${action} user ID: ${user.id}`) },
+        // 💡 เรียก onAction ที่ส่งมาจาก AdminDashboardScreen พร้อม user_uid และสถานะปัจจุบัน
+        { text: actionButtonText, onPress: () => onAction(user_uid, isDeleted) },
       ]
     );
   };
 
-  // กำหนด Styles ตามสถานะ
-  const statusStyle = user.isDeleted ? styles.statusDeleted : styles.statusActive;
-  const actionButtonStyle = user.isDeleted ? styles.buttonRestore : styles.buttonDelete;
-  const actionButtonText = user.isDeleted ? 'กู้คืน' : 'ระงับ';
+  // 💡 กำหนด Styles สำหรับข้อความสถานะ
+  const statusStyle = isDeleted ? styles.statusDeleted : styles.statusActive;
 
   return (
-    <View style={user.isDeleted ? styles.rowDeleted : styles.rowContainer}>
+    // 💡 กำหนด Style พื้นหลังให้เป็นสีเทาเมื่อถูกระงับ
+    <View style={isDeleted ? styles.rowDeleted : styles.rowContainer}>
       <View style={styles.cellName}>
-        <Text style={styles.textName}>{user.fullName}</Text>
-        <Text style={[styles.textStatus, statusStyle]}>
-          {user.isDeleted ? 'ระงับ (Soft Delete)' : 'ใช้งานปกติ'}
-        </Text>
+        <Text style={styles.textName}>{fullName}</Text>
+        <Text style={styles.textUid}>UID: {user_uid}</Text>
+        {isDeleted && (
+             <Text style={[styles.textStatus, statusStyle]}>
+                ระงับ (Soft Deleted)
+            </Text>
+        )}
       </View>
+
       <View style={styles.cellStats}>
-        <Text style={styles.textLabel}>ใช้ล่าสุด: <Text style={styles.textValue}>{user.lastUsed}</Text></Text>
-        <Text style={styles.textLabel}>วันใช้งาน: <Text style={styles.textValue}>{user.daysUsed} วัน</Text></Text>
-        <Text style={styles.textLabel}>เวลาอัดรวม: <Text style={styles.textValue}>{user.totalDuration}</Text></Text>
-      </View>     
+        <Text style={styles.textStatsLastUsed}>ใช้งานล่าสุด: {lastUsed}</Text>
+        {/* 💡 แสดงสถิติการใช้งานจริงจาก user object */}
+        <Text style={styles.textStats}>ใช้งาน: {daysUsed} วัน ({totalDurationFormatted})</Text>
+      </View>
+
       <View style={styles.cellAction}>
-        <TouchableOpacity style={[styles.buttonBase, actionButtonStyle]} onPress={handleAction}>
+        {/* 💡 ใช้ actionButtonStyle และ actionButtonText ที่กำหนดไว้ */}
+        <TouchableOpacity 
+          style={[styles.button, actionButtonStyle]} 
+          onPress={handleAction}
+        >
           <Text style={styles.buttonText}>{actionButtonText}</Text>
         </TouchableOpacity>
       </View>
@@ -44,9 +58,8 @@ const UserListItem = ({ user }) => {
   );
 };
 
-// Styles ที่เกี่ยวข้องกับ UserListItem เท่านั้น
 const styles = StyleSheet.create({
-    // --- รายการผู้ใช้ (List Item) ---
+  // --- Container Styles (มีการเปลี่ยนแปลง) ---
   rowContainer: {
     backgroundColor: '#ffffff',
     borderRadius: 8,
@@ -55,14 +68,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    elevation: 2, // เงาสำหรับ Android
-    shadowColor: '#000', // เงาสำหรับ iOS
+    elevation: 2, 
+    shadowColor: '#000', 
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
+  // 💡 Style ใหม่สำหรับบัญชีที่ถูกระงับ (สีพื้นหลังสีเทาอ่อน)
   rowDeleted: {
-    backgroundColor: '#fff0f0', // สีแดงอ่อนสำหรับบัญชีที่ถูกลบ
+    backgroundColor: '#f0f0f0', 
     opacity: 0.8,
     borderRadius: 8,
     padding: 15,
@@ -70,12 +84,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
+    elevation: 2, 
+    shadowColor: '#000', 
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
+  // --- Cell Styles (เหมือนเดิม) ---
   cellName: {
     flex: 2.5,
   },
@@ -87,47 +102,56 @@ const styles = StyleSheet.create({
     flex: 1.5,
     alignItems: 'flex-end',
   },
+  // --- Text Styles (มีการเปลี่ยนแปลง) ---
   textName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 4,
   },
+  textUid: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
+  },
   textStatus: {
     fontSize: 12,
+    fontWeight: 'bold',
   },
   statusActive: {
     color: '#28a745', // เขียว
   },
+  // 💡 Style สำหรับสถานะถูกระงับ (ข้อความสีแดง)
   statusDeleted: {
     color: '#dc3545', // แดง
   },
-  textLabel: {
-    fontSize: 11,
-    color: '#777',
+  textStatsLastUsed: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 2,
   },
-  textValue: {
-    fontWeight: '600',
-    color: '#555',
+  textStats: {
+    fontSize: 13,
+    color: '#666',
   },
-  
-  buttonBase: {
+  // --- Button Styles (มีการเปลี่ยนแปลง) ---
+  button: {
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 5,
-    minWidth: 80,
-    alignItems: 'center',
-  },
-  buttonDelete: {
-    backgroundColor: '#dc3545', // แดง
-  },
-  buttonRestore: {
-    backgroundColor: '#007bff', // น้ำเงิน
   },
   buttonText: {
-    color: 'white',
-    fontSize: 12,
+    color: '#fff',
     fontWeight: 'bold',
+    fontSize: 13,
+  },
+  // 💡 Style สำหรับปุ่มระงับ (สีแดง)
+  buttonDelete: {
+    backgroundColor: '#dc3545', 
+  },
+  // 💡 Style สำหรับปุ่มกู้คืน (สีเหลือง/ส้ม)
+  buttonRestore: {
+    backgroundColor: '#ffc107', 
   },
 });
 

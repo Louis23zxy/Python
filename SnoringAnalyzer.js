@@ -60,7 +60,7 @@ export default function SnoringAnalyzer() {
       loudestSnoreDb: item.loudest_snore_db,
       fileUri: `${API_URL}${item.file_url}`,
       timestamp: item.created_at,
-      date: formattedDate, // ✅ เพิ่มบรรทัดนี้
+      date: formattedDate,
       duration_millis: item.duration_millis ?? (item.duration * 1000) ?? 0,
       snoringEventsCount: item.snoring_count || 0,
       apneaEventsCount: 0,
@@ -348,7 +348,7 @@ export default function SnoringAnalyzer() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F7F7',
+    backgroundColor: '#7db3ecff',
   },
   centeredContainer: {
     flex: 1,
@@ -377,12 +377,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 5,
   },
   selectedDayCircle: {
-    backgroundColor: '#556B2F',
+    backgroundColor: '#007AFF',
   },
   dayText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#888',
+    color: '#1d1d1dff',
   },
   selectedDayText: {
     color: 'white',
@@ -396,12 +396,12 @@ const styles = StyleSheet.create({
   dayHeader: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#000000ff',
     textAlign: 'center',
   },
   dateSubtext: {
     fontSize: 16,
-    color: '#888',
+    color: '#242424ff',
     marginTop: 5,
     textAlign: 'center',
   },

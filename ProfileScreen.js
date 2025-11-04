@@ -4,36 +4,23 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth'; 
-import { useNavigation } from '@react-navigation/native';
 import StatsSection from './components/StatsSection';
 
-const SERVER_URL = 'http://172.16.16.12:5000'; // ⚠️ เปลี่ยนเป็น IP ของ Flask server
-
-// Helper component สำหรับแสดงแต่ละแถวข้อมูลในตาราง
+const SERVER_URL = 'http://172.16.16.12:5000';
 const ProfileInfoRow = ({ label, value }) => (
     <View style={styles.infoRow}>
         <Text style={styles.infoLabel}>{label}</Text>
         <Text style={styles.infoValue}>{value || '-'}</Text>
     </View>
 );
-
 const ProfileScreen = () => {
-    const navigation = useNavigation();
-    // States เดิม
     const [profileImage, setProfileImage] = useState(null);
-    const [settingsVisible, setSettingsVisible] = useState(false);
-    
-    // States สำหรับข้อมูลผู้ใช้
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [gender, setGender] = useState('');
-    
-    // States สำหรับ Auth และ Loading
     const [userUID, setUserUID] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isAuthReady, setIsAuthReady] = useState(false);
-
-    // 1. Auth Listener: ดึง UID เมื่อสถานะเปลี่ยน
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             if (user) {
@@ -48,27 +35,20 @@ const ProfileScreen = () => {
         });
         return unsubscribe;
     }, []);
-
-
-    // 2. Fetch Profile Function
     const fetchProfile = useCallback(async (uid) => {
         if (!uid) {
             setIsLoading(false);
             return;
         }
-
         setIsLoading(true);
         try {
             const response = await fetch(`${SERVER_URL}/get-user-profile/${uid}`);
             const data = await response.json();
-
             if (response.ok) {
                 setFirstName(data.first_name || 'ไม่ได้ระบุ');
                 setLastName(data.last_name || 'ไม่ได้ระบุ');
                 setGender(data.sex || 'ไม่ได้ระบุ');
-                // setProfileImage(data.profile_image_url || null); // หากมี URL รูปภาพ
             } else if (response.status === 404) {
-                 // ผู้ใช้ล็อกอินแล้ว แต่ไม่มีข้อมูลโปรไฟล์ใน DB
                  setFirstName('ยังไม่ตั้งค่า');
                  setLastName('ยังไม่ตั้งค่า');
                  setGender('ยังไม่ตั้งค่า');
@@ -83,7 +63,6 @@ const ProfileScreen = () => {
         }
     }, []);
 
-    // 3. Effect สำหรับดึงข้อมูลโปรไฟล์เมื่อ UID พร้อม
     useEffect(() => {
         if (isAuthReady && userUID) {
             fetchProfile(userUID);
@@ -92,9 +71,7 @@ const ProfileScreen = () => {
         }
     }, [isAuthReady, userUID, fetchProfile]);
 
-    // ฟังก์ชันจัดการรูปภาพ (เหมือนเดิม)
     const pickImage = async () => {
-        // Request media library permissions
         if (Platform.OS !== 'web') {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
@@ -102,25 +79,17 @@ const ProfileScreen = () => {
                 return;
             }
         }
-
         let result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.5,
         });
-
         if (!result.canceled) {
             setProfileImage(result.assets[0].uri);
-            // ⚠️ ต้องมีฟังก์ชัน uploadProfileImage(result.assets[0].uri) เพื่อบันทึกรูปไปที่ Storage
             Alert.alert("Image Selected", "รูปภาพพร้อมสำหรับการอัปโหลด (ฟังก์ชันบันทึกยังไม่ได้ถูกเรียกใช้)");
         }
     };
-
-
-    // ----------------------------------------------------
-    // 4. Conditional Rendering (สถานะ Loading / ไม่ล็อกอิน)
-    // ----------------------------------------------------
     if (!isAuthReady) {
          return (
             <View style={styles.loadingContainer}>
@@ -129,7 +98,6 @@ const ProfileScreen = () => {
             </View>
         );
     }
-    
     if (!userUID) {
          return (
             <View style={styles.loadingContainer}>
@@ -138,40 +106,14 @@ const ProfileScreen = () => {
             </View>
         );
     }
-
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.fullContainer}
-        >
-            <View style={styles.headerBar}>
-                 <Text style={styles.headerTitle}>โปรไฟล์ผู้ใช้งาน</Text>
-                <TouchableOpacity
-                    style={styles.settingsButton}
-                    onPress={() => setSettingsVisible(!settingsVisible)}
-                >
-                    <MaterialIcons name="settings" size={28} color="#6200ee" />
-                </TouchableOpacity>
-            </View>
-            
-            {/* Settings Dropdown */}
-            {settingsVisible && (
-                <View style={styles.settingsDropdown}>
-                    <TouchableOpacity onPress={() => { Alert.alert("ฟังก์ชันนี้", "ยังไม่ได้ถูกสร้าง"); setSettingsVisible(false); }}>
-                         <Text style={styles.settingsText}>แก้ไขข้อมูล</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { Alert.alert("ฟังก์ชันนี้", "ยังไม่ได้ถูกสร้าง"); setSettingsVisible(false); }}>
-                         <Text style={styles.settingsText}>เปลี่ยนรหัสผ่าน</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => auth.signOut().then(() => setSettingsVisible(false))}>
-                        <Text style={[styles.settingsText, { color: 'red' }]}>ออกจากระบบ</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
-
+        >  
+        <View>
             <ScrollView contentContainerStyle={styles.scrollContainer}>
-                
-                {/* Profile Picture Section */}
+
                 <View style={styles.profileHeader}>
                     <TouchableOpacity onPress={pickImage} style={styles.imagePicker}>
                         {profileImage ? (
@@ -185,12 +127,8 @@ const ProfileScreen = () => {
                              <MaterialIcons name="camera-alt" size={20} color="white" />
                         </View>
                     </TouchableOpacity>
-                    {/* แสดงชื่อผู้ใช้ปัจจุบัน */}
                     <Text style={styles.displayName}>{`${firstName} ${lastName}`}</Text>
-                    {/* ลบ: <Text style={styles.displayUID}>UID: {userUID}</Text> */}
                 </View>
-
-                {/* Profile Information Table Section (ตารางข้อมูล) */}
                 <View style={styles.infoCard}>
                     <Text style={styles.cardTitle}>ข้อมูลส่วนตัว</Text>
                     {isLoading ? (
@@ -204,9 +142,7 @@ const ProfileScreen = () => {
                         </View>
                     )}
                 </View>
-  
                 <StatsSection userUID={userUID} />
-                
                 <TouchableOpacity style={styles.logoutButton} onPress={() => { auth.signOut().then(() => {
                    Alert.alert('ออกจากระบบ', 'คุณได้ออกจากระบบแล้ว');
                   })
@@ -218,28 +154,14 @@ const ProfileScreen = () => {
                  <Text style={styles.logoutButtonText}>ออกจากบัญชี</Text>
                 </TouchableOpacity>      
             </ScrollView>
+        </View>
         </KeyboardAvoidingView>
     );
 };
 
-// ... (ส่วน Styles) ...
-
 const styles = StyleSheet.create({
-    fullContainer: { flex: 1, backgroundColor: '#f0f4f7' },
-    // Header
-    headerBar: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: Platform.OS === 'ios' ? 90 : 60,
-        paddingTop: Platform.OS === 'ios' ? 40 : 10,
-        backgroundColor: 'white',
-        borderBottomWidth: 1,
-        borderBottomColor: '#ddd',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 10,
+    fullContainer: { flex: 1, 
+        backgroundColor: '#7db3ecff' 
     },
     headerTitle: {
         fontSize: 20,
@@ -252,7 +174,6 @@ const styles = StyleSheet.create({
         right: 15,
         padding: 5,
     },
-    // Settings Dropdown
     settingsDropdown: {
         position: 'absolute',
         top: Platform.OS === 'ios' ? 90 : 60,
@@ -269,9 +190,10 @@ const styles = StyleSheet.create({
         zIndex: 10,
         gap: 10,
     },
-    settingsText: { fontSize: 16, color: '#333' },
-    
-    // Main Scroll Content
+    settingsText: { 
+        fontSize: 16, 
+        color: '#333' 
+    },
     scrollContainer: {
         paddingTop: Platform.OS === 'ios' ? 120 : 95,
         paddingHorizontal: 20,
@@ -295,14 +217,16 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#666',
     },
-    
-    // Profile Header
     profileHeader: { 
         alignItems: 'center', 
-        marginBottom: 30, // ปรับให้มีระยะห่างด้านล่างมากขึ้นเมื่อไม่มี UID
+        marginBottom: 30, 
         width: '100%',
     },
-    imagePicker: { position: 'relative', width: 150, height: 150 },
+    imagePicker: { 
+        position: 'relative', 
+        width: 150, 
+        height: 150 
+    },
     profileImagePlaceholder: {
         width: 150,
         height: 150,
@@ -318,7 +242,7 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 0,
         right: 5,
-        backgroundColor: '#6200ee',
+        backgroundColor: '#007AFF',
         borderRadius: 20,
         padding: 8,
         borderWidth: 2,
@@ -330,9 +254,6 @@ const styles = StyleSheet.create({
         marginTop: 15,
         color: '#333',
     },
-    // ลบ styles.displayUID ออก
-    
-    // Info Card/Table
     infoCard: {
         width: '100%',
         backgroundColor: 'white',
@@ -382,14 +303,16 @@ const styles = StyleSheet.create({
         color: '#777',
         marginTop: 10,
         textAlign: 'center',
-    },logoutButton: {
+    },
+    logoutButton: {
     backgroundColor: '#FF3B30',
     paddingVertical: 15,
     borderRadius: 10,
     alignItems: 'center',
     marginTop: 20,
     width: '100%',
-    },logoutButtonText: {
+    },
+    logoutButtonText: {
     color: 'white',
     fontSize: 18,
     fontWeight: 'bold',
