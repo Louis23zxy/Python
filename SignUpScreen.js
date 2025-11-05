@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator,Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { createUserWithEmailAndPassword } from 'firebase/auth'; 
-import { auth } from './firebase'; 
+import { auth } from './firebase';
 
 const PROFILE_API_URL = 'http://172.16.16.12:5000/save-user-profile'; 
 const validateEmail = (email) => {
-    // Regex ที่รองรับ .com, .net, หรือ .co.th (i = case-insensitive)
     const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*\.(com|net|co\.th)$/i; 
     
     if (!emailRegex.test(email)) {
@@ -49,7 +48,7 @@ const SignUpScreen = () => {
 
     const GenderButton = ({ label, value }) => {
         const isActive = gender === value;
-        return (
+        return (          
             <TouchableOpacity 
                 style={[styles.genderButton, isActive && styles.genderButtonActive]}
                 onPress={() => {setGender(value); setValidationErrors({}); setGeneralError('');}}
@@ -132,10 +131,10 @@ const SignUpScreen = () => {
             const profileSaved = await saveUserProfile(user.uid);
 
             if (profileSaved) {
-                navigation.replace('Home');
+                navigation.replace('SignIn'); 
             } else {
                 setGeneralError("ลงทะเบียนสำเร็จแล้ว แต่ไม่สามารถบันทึกข้อมูลส่วนตัวได้ กรุณาลองเข้าสู่ระบบ"); 
-                navigation.navigate('Login');
+                navigation.navigate('SignIn'); 
             }
 
         } catch (error) {
@@ -348,6 +347,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#666',
     },
+    
 });
 
 export default SignUpScreen;

@@ -204,9 +204,7 @@ export default function SnoringListItem({
       )}
     </View>
   );
-
 }
-
 const styles = StyleSheet.create({
   listItemContainer: {
     backgroundColor: '#ffffffff',

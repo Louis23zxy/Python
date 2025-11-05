@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7F7F7',
   },
   headerSpacer: {
-    height: 40, // ปรับความสูงของพื้นที่ว่างให้เหมาะสม
+    height: 40, 
   },
   dayFilterContainer: {
     height: 60,

@@ -8,19 +8,15 @@ from sklearn.preprocessing import LabelBinarizer
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-# --- CONFIGURATION (กำหนดค่า) ---
-# <<<<<<< สำคัญ: แก้ไข Path นี้ ให้ชี้ไปที่โฟลเดอร์ที่มีโฟลเดอร์ย่อย 'class1' และ 'class2' >>>>>>>
 DATA_PATH = "C:/Users/Naruethep Sovajan/Desktop/Sound" 
-# <<<<<<<<<<<<<<>>>>>>>>>>>>>>>>>
-SAMPLE_RATE = 16000 # อัตราการสุ่มตัวอย่างมาตรฐาน
-MAX_LEN = 128       # ความยาวของ Mel Spectrogram (กว้าง)
-N_MELS = 128        # จำนวน Mel band (สูง)
+SAMPLE_RATE = 16000 
+MAX_LEN = 128       
+N_MELS = 128        
 MODEL_OUTPUT_DIR = "C:/Users/Naruethep Sovajan/Desktop/VoiceRe/SaveModel"
 model_save_path = "snoring_cnn_classifier_model.h5"
 label_encoder_path = "label_encoder.pkl"
-# ---------------------
 
-# 1. ฟังก์ชันสกัดคุณลักษณะ Mel Spectrogram (สำหรับ 2D-CNN)
+
 def extract_features(file_path, sr=SAMPLE_RATE, n_mels=N_MELS, max_len=MAX_LEN):
     """
     สกัดคุณลักษณะ Mel Spectrogram และปรับความยาวให้คงที่
@@ -29,15 +25,11 @@ def extract_features(file_path, sr=SAMPLE_RATE, n_mels=N_MELS, max_len=MAX_LEN):
         y, sr = librosa.load(file_path, sr=sr)
         mel_spec = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=n_mels)
         features = librosa.power_to_db(mel_spec, ref=np.max)
-        
-        # ปรับความยาวให้เท่ากัน (Padding/Trimming)
         if features.shape[1] < max_len:
             pad_width = max_len - features.shape[1]
             features = np.pad(features, pad_width=((0, 0), (0, pad_width)), mode='constant')
         else:
             features = features[:, :max_len]
-            
-        # เพิ่มมิติ channel (สำหรับ CNN: [height, width, channel])
         features = np.expand_dims(features, axis=-1)
         return features
         
@@ -74,11 +66,10 @@ def create_cnn_model(input_shape, num_classes=1):
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(0.5),
 
-        # Output Layer: ใช้ Sigmoid สำหรับ Binary Classification (0 หรือ 1)
         tf.keras.layers.Dense(num_classes, activation='sigmoid')
     ])
     
-    # คอมไพล์โมเดล: ใช้ binary_crossentropy และ Adam optimizer
+
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
         loss='binary_crossentropy', 
@@ -111,24 +102,18 @@ def plot_training_history(history):
     
     plt.show()
 
-# 4. ฟังก์ชันหลัก (ปรับปรุงการโหลดข้อมูลให้รองรับ 2 คลาส)
-def main():
-    
+
+def main():   
     print("="*50)
     print("ระบบฝึกโมเดลตรวจจับเสียงกรนแบบ 2D-CNN Classification")
     print("="*50)
-    
-    # [ขั้นตอนที่ 1] โหลดข้อมูล (สำคัญ: การสกัด Label จากโฟลเดอร์ 'class1' และ 'class2')
     print("\n[ขั้นตอนที่ 1] โหลดและสกัดคุณลักษณะข้อมูล (จาก 2 โฟลเดอร์)")
     
     features = []
     labels = []
-
-    # เดินสำรวจทุกโฟลเดอร์ย่อยใน DATA_PATH
+    
     for dirname, _, filenames in os.walk(DATA_PATH):
         label = os.path.basename(dirname) 
-        
-        # <<< การแก้ไขที่สำคัญ: เปลี่ยนจาก ['0', '1'] เป็น ['class1', 'class2'] >>>
         if label in ['class1', 'class2']: 
             for filename in tqdm(filenames, desc=f"Processing {label} files"):
                 if filename.endswith(('.wav', '.mp3')):
@@ -142,17 +127,14 @@ def main():
     X = np.array(features)
     y_str = np.array(labels) 
 
-    # [ขั้นตอนที่ 2] แปลง Label และแบ่งข้อมูล
     print(f"\nพบข้อมูลทั้งหมดที่ประมวลผลได้: {len(X)} ตัวอย่าง")
     
     encoder = LabelBinarizer()
-    # LabelBinarizer จะแปลง 'class1' และ 'class2' เป็นตัวเลข 0 และ 1
     Y = encoder.fit_transform(y_str)
     
     if Y.ndim == 1:
-        Y = Y.reshape(-1, 1) # ปรับรูปร่างให้เข้ากับ Keras (None, 1)
+        Y = Y.reshape(-1, 1) 
     
-    # แบ่งข้อมูล 80% Train, 20% Validation (ใช้ stratify เพื่อให้ข้อมูลสมดุล)
     X_train, X_val, Y_train, Y_val = train_test_split(
         X, Y, test_size=0.2, random_state=42, stratify=Y 
     )
@@ -160,20 +142,17 @@ def main():
     print(f"X_train.shape: {X_train.shape}")
     print(f"Y_train.shape: {Y_train.shape}")
 
-
-    # [ขั้นตอนที่ 3] สร้างโมเดล 2D-CNN
     print("\n[ขั้นตอนที่ 3] สร้างโมเดล 2D-CNN")
     input_shape = X_train.shape[1:] 
     
     cnn_model = create_cnn_model(input_shape=input_shape, num_classes=1) 
     cnn_model.summary()
 
-    # [ขั้นตอนที่ 4] เริ่มฝึกโมเดล (Supervised)
     print("\n[ขั้นตอนที่ 4] เริ่มฝึกโมเดล")
     history = cnn_model.fit(
         X_train, Y_train,  
         epochs=100,
-        batch_size=32, # Batch Size ที่เหมาะสม
+        batch_size=32, 
         validation_data=(X_val, Y_val), 
         callbacks=[
             tf.keras.callbacks.EarlyStopping(patience=15, restore_best_weights=True), 
@@ -182,10 +161,8 @@ def main():
         verbose=1
     )
 
-    # แสดงกราฟ loss และ accuracy
     plot_training_history(history)
 
-    # [ขั้นตอนที่ 5] บันทึกโมเดลและ Encoder
     print("\n[ขั้นตอนที่ 5] บันทึกโมเดล")
     os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True) 
     cnn_model.save(model_save_path)

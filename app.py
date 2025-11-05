@@ -14,42 +14,37 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app) 
 
-# ✅ Path โมเดล
 MODEL_PATH = r"C:\Users\Naruethep Sovajan\Desktop\VoiceRe\SaveModel\snoring_cnn_classifier_model.h5"
 if not os.path.exists(MODEL_PATH):
-    print(f"❌ Warning: Model file not found at: {MODEL_PATH}")
-
-# ✅ DB config - ใช้ค่าที่คุณระบุในไฟล์แรก
+    print(f"Warning: Model file not found at: {MODEL_PATH}")
 DB_CONFIG = {
-    "dbname": "myrec_db", # เปลี่ยนเป็นชื่อฐานข้อมูลที่คุณใช้
+    "dbname": "myrec_db", 
     "user": "postgres",
-    "password": "louis23zx",  # ⚠️ เปลี่ยนให้ตรงกับรหัสผ่านจริงของคุณ
+    "password": "louis23zx",  
     "host": "localhost"
 }
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# โหลดโมเดล
 try:
     model = load_model(MODEL_PATH)
-    print("✅ Snoring detection model loaded successfully.")
+    print("Snoring detection model loaded successfully.")#ดักจับข้อผิดพลาดในการโหลดโมเดล
 except Exception as e:
-    print(f"❌ Error loading model: {e}")
+    print(f"Error loading model: {e}")
     model = None
 
-# Helper function สำหรับเชื่อมต่อ DB
 def get_db_connection():
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         return conn
     except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+        print(f"❌ Database connection failed: {e}")#ดักจับข้อผิดพลาดการเชื่อมต่อserver
         return None
 
 
 
-def extract_features(y, sr, n_mels=128, n_fft=2048, hop_length=512, n_frames=128): # <-- แก้ตรงนี้เป็น 128
+def extract_features(y, sr, n_mels=128, n_fft=2048, hop_length=512, n_frames=128):
     
     mels = librosa.feature.melspectrogram(
         y=y,
@@ -61,19 +56,19 @@ def extract_features(y, sr, n_mels=128, n_fft=2048, hop_length=512, n_frames=128
     
     mels = librosa.power_to_db(mels, ref=np.max)
 
-    # ปรับขนาด (Padding/Trimming) ให้เป็น (128, 128)
+    # ปรับขนาด ให้เป็น (128, 128)
     if mels.shape[1] > n_frames:
         mels = mels[:, :n_frames]
     elif mels.shape[1] < n_frames:
         pad_width = n_frames - mels.shape[1]
         mels = np.pad(mels, ((0, 0), (0, pad_width)), mode='constant')
         
-    return mels # ส่งคืนมิติ (128, 128)
+    return mels
 
 @app.route("/analyze-audio", methods=["POST"])
 def analyze_audio():
     """Receives base64 audio data, analyzes it for snoring, and saves results."""
-    if model is None:
+    if model is None: #โมเดลพร้อมใช้งานมั้ย 
         return jsonify({"error": "Model not loaded", "message": "The AI model failed to load on the server."}), 500
         
     try:
@@ -96,7 +91,7 @@ def analyze_audio():
         y, sr = librosa.load(temp_wav_path, sr=16000)
         os.remove(temp_wav_path)
 
-        chunk_size = 4.0  # 4 วินาทีต่อชิ้น
+        chunk_size = 4.0  
         chunk_samples = int(chunk_size * sr)
         all_features_list = []
 
@@ -106,10 +101,9 @@ def analyze_audio():
             all_features_list.append(features)
 
         if not all_features_list:
-            return jsonify({"error": "Analysis failed", "message": "Audio is too short for analysis."}), 400
+            return jsonify({"error": "Analysis failed", "message": "Audio is too short for analysis."}), 400 #ถ้าเสียงสั้นเดิน
 
         X_predict = np.stack([np.expand_dims(f, axis=-1) for f in all_features_list])
-
         predictions = model.predict(X_predict, verbose=0)
 
         snoring_count = 0
@@ -149,7 +143,7 @@ def analyze_audio():
             return jsonify({"error": "Database error", "message": "Failed to connect to the database."}), 500
              
         cur = conn.cursor()
-        file_name = f"{user_uid}_{name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.wav"
+        file_name = f"{user_uid}_{name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.wav" #กันชื่อไฟล์ชนกัน
         file_path = os.path.join(UPLOAD_FOLDER, file_name)
         audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
         audio_segment.export(file_path, format="wav")
@@ -312,7 +306,7 @@ def get_recording_stats(uid):
         })
 
     except Exception as e:
-        print(f"❌ Error in /get-recording-stats: {e}")
+        print(f" Error in /get-recording-stats: {e}")
         if conn:
             conn.close()
         return jsonify({"error": "Internal server error", "message": str(e)}), 500
@@ -372,14 +366,16 @@ def get_all_user_stats():
                 up.first_name,
                 up.last_name,
                 up.is_deleted,
+                up.created_at,
                 MAX(r.created_at) AS last_used,
                 COUNT(DISTINCT DATE(r.created_at)) AS days_used,
                 COALESCE(SUM(r.duration_millis), 0) AS total_duration_millis
+                
                     
             FROM user_profiles up
             LEFT JOIN recordings r ON up.user_uid = r.user_uid
             -- is_deleted ต้องอยู่ใน GROUP BY เนื่องจากถูก SELECT มา
-            GROUP BY up.user_uid, up.first_name, up.last_name, up.is_deleted
+            GROUP BY up.user_uid, up.first_name, up.last_name, up.is_deleted, up.created_at
             ORDER BY last_used DESC NULLS LAST;
         """)
         rows = cur.fetchall()
@@ -393,10 +389,11 @@ def get_all_user_stats():
                 "firstName": r[1],
                 "lastName": r[2],
                 "fullName": f"{r[1]} {r[2]}",
-                "isDeleted": r[3], # 💡 Index 3: is_deleted (ถูกต้อง)
-                "lastUsed": r[4].isoformat() if r[4] else 'N/A', # 🔑 แก้ไข: ย้ายจาก r[3] เป็น r[4]
-                "daysUsed": int(r[5] or 0), # 🔑 แก้ไข: ย้ายจาก r[4] เป็น r[5]
-                "totalDurationMillis": int(r[6] or 0) # 🔑 แก้ไข: ย้ายจาก r[5] เป็น r[6]
+                "isDeleted": r[3], 
+                "createdAt": r[4].isoformat() if r[4] else 'N/A', # 🎯 NEW FIELD: Index 4
+                "lastUsed": r[5].isoformat() if r[5] else 'N/A', # 🔑 Index ถูกเลื่อนเป็น 5
+                "daysUsed": int(r[6] or 0), # 🔑 Index ถูกเลื่อนเป็น 6
+                "totalDurationMillis": int(r[7] or 0) # 🔑 Index ถูกเลื่อนเป็น 7 
             }
             for r in rows
         ]

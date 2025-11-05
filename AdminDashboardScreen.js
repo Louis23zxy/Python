@@ -4,7 +4,30 @@ import { useNavigation } from '@react-navigation/native';
 import UserListItem from './components/UserListItem';
 const BASE_URL = "http://172.16.16.12:5000";
 const ADMIN_EMAIL = 'admin@mysnore.com'; 
+const formatDisplayDate = (isoDateString) => {
+    if (!isoDateString || isoDateString === 'N/A') {
+        return 'N/A';
+    }
+    
+    try {
+        const date = new Date(isoDateString);
 
+        if (isNaN(date.getTime())) {
+            return 'N/A';
+        }
+
+        // จัดรูปแบบเป็น DD Mon YYYY (พ.ศ.)
+        const day = date.getDate();
+        // ใช้ th-TH เพื่อดึงชื่อเดือนแบบย่อ (e.g., ต.ค., พ.ย.)
+        const month = date.toLocaleDateString('th-TH', { month: 'short' }); 
+        const year = date.getFullYear() + 543; // แปลง ค.ศ. เป็น พ.ศ.
+        
+        return `${day} ${month}. ${year}`; // เช่น 12 ต.ค. 2568
+
+    } catch (e) {
+        return 'N/A';
+    }
+};
 const AdminDashboardScreen = () => {
     const navigation = useNavigation();
     const [users, setUsers] = useState([]);
@@ -31,6 +54,7 @@ const AdminDashboardScreen = () => {
             const data = await response.json();
             const formattedUsers = data.map(user => ({
                 ...user,
+                createdAt: formatDisplayDate(user.createdAt),
                 lastUsed: user.lastUsed !== 'N/A' 
                     ? new Date(user.lastUsed).toLocaleDateString('th-TH', { 
                         year: 'numeric', month: 'short', day: 'numeric', 
@@ -124,22 +148,24 @@ const AdminDashboardScreen = () => {
         );
     }
     return (
-        <View style={styles.container}>
-            <View style={styles.headerRow}>
-                <Text style={styles.header}>Admin Dashboard: User Statistics</Text>
-                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                    <Text style={styles.logoutText}>ออกจากระบบ</Text>
-                </TouchableOpacity>
-            </View>
+    <View style={styles.container}>
+        
+        <Text style={styles.header}>Admin Dashboard: User Statistics</Text>
 
-            <FlatList
-                data={users}
-                keyExtractor={(item) => item.user_uid}
-                renderItem={renderUserItem}
-                contentContainerStyle={styles.listContainer}
-            />
-        </View>
-    );
+        <FlatList
+            data={users}
+            keyExtractor={(item) => item.user_uid}
+            renderItem={renderUserItem}
+            contentContainerStyle={{ paddingBottom:100 }} // สำคัญ
+        />
+
+        <TouchableOpacity style={styles.floatingLogoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>ออกจากระบบ</Text>
+        </TouchableOpacity>
+
+    </View>
+);
+
 };
 
 const styles = StyleSheet.create({
@@ -198,6 +224,20 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: 'bold',
     },
+    floatingLogoutButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: '#dc3545',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 30,
+    elevation: 4, // android shadow
+    shadowColor: '#000', // ios
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+},
 });
 
 export default AdminDashboardScreen;

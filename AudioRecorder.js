@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Alert, TouchableOpacity } from "react-native"; 
+import { View, Text, StyleSheet, Alert, TouchableOpacity,Image } from "react-native"; 
 import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system";
 import { auth } from './firebase';
 import AsyncStorage from "@react-native-async-storage/async-storage";
+const LogoImage = require('../assets/Logo.jpg'); 
 
 export default function AudioRecorder() {
   const [recording, setRecording] = useState(null);
@@ -135,9 +136,15 @@ export default function AudioRecorder() {
 
   return (
     <View style={styles.container}>
+       <View style={styles.logoContainer}>
+                      <Image 
+                            source={LogoImage} 
+                            style={styles.logo}
+                      />
+                  </View>
       <TouchableOpacity
-        style={recording ? styles.stopButton : styles.startButton}
-        onPress={recording ? stopRecording : startRecording}
+        style={[recording ? styles.stopButton : styles.startButton,styles.floatingButton]}
+         onPress={recording ? stopRecording : startRecording}
         activeOpacity={0.8}
       >
         <Text style={styles.buttonText}>
@@ -201,5 +208,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#5E5E5E", 
     fontWeight: "500",
+  },
+  floatingButton: {
+    position: "absolute",
+    bottom: 40,
+    alignSelf: "center",
+  },
+  logoContainer: {
+    marginBottom: 40,
+  },
+  logo: {
+    width:  300, 
+    height: 300,
+    borderRadius: 50,
+    borderWidth: 4, 
+    borderColor: '#FFFFFF', 
+    opacity: 0.3,
   },
 });

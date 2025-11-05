@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, ActivityIndicator,Alert  } from 'react-native';
 import { useNavigation } from '@react-navigation/native'; 
-import { signInWithEmailAndPassword } from 'firebase/auth'; 
-import { auth } from './firebase'; 
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth'; 
+import { auth } from './firebase';
 const LogoImage = require('../assets/Logo.jpg');
 const BASE_URL = 'http://172.16.16.12:5000'; 
 const SignInScreen = () => {
@@ -31,27 +31,37 @@ const SignInScreen = () => {
                     routes: [{ name: 'แอดมิน' }], 
                 });
             } else {
-                const response = await fetch(`${BASE_URL}/user-status/${user.uid}`);
-                if (!response.ok) {
-                    throw new Error("ไม่สามารถตรวจสอบสถานะบัญชีได้");
+                try {
+                    const response = await fetch(`${BASE_URL}/user-status/${user.uid}`);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        if (data.isDeleted) {
+                            // **บัญชีถูกระงับ: จัดการทันทีและป้องกันการไปหน้า Home**
+                            await signOut(auth); // ต้องล็อกเอาท์ออกจาก Firebase Auth ด้วย
+                            Alert.alert('บัญชีถูกระงับ', 'บัญชีของคุณถูกระงับโดยผู้ดูแลระบบ กรุณาติดต่อฝ่ายสนับสนุน');
+                            // ไม่มีการนำทาง (navigation) ใดๆ ที่นี่
+                        } else {
+                            // **บัญชีปกติ: นำทางไปหน้า Home**
+                            navigation.reset({
+                                index: 0,
+                                routes: [{ name: 'AppTabs' }], // หน้า Home คือหน้าที่มี AudioRecorder
+                            });
+                        }
+                    } else {
+                        // กรณี API ตอบกลับด้วยสถานะไม่ OK (เช่น 404, 500)
+                        await signOut(auth); // ล็อกเอาท์เพื่อความปลอดภัย
+                        setErrorMessage('ไม่สามารถตรวจสอบสถานะบัญชีได้ กรุณาลองใหม่อีกครั้ง');
+                        // ไม่มีการนำทาง
+                    }
+                } catch (apiError) {
+                    // กรณีเกิดข้อผิดพลาดในการเรียก API (เช่น ไม่มีอินเทอร์เน็ต)
+                    console.error('API Error checking user status:', apiError);
+                    await signOut(auth); // ล็อกเอาท์เพื่อความปลอดภัยสูงสุด
+                    setErrorMessage('ไม่สามารถเชื่อมต่อเพื่อตรวจสอบสถานะบัญชีได้ กรุณาตรวจสอบอินเทอร์เน็ต');
+                    // ไม่มีการนำทาง
                 }
-                
-                const data = await response.json();
-                
-                if (data.isDeleted) {
-                    await auth.signOut(); 
-                    Alert.alert(
-                        "บัญชีถูกระงับการใช้งาน",
-                        "บัญชีของคุณถูกระงับโดยผู้ดูแลระบบ กรุณาติดต่อฝ่ายสนับสนุน"
-                    );
-                    setIsLoading(false);
-                    return;
-                }
-                navigation.reset({
-                  index: 0,
-                 routes: [{ name: 'AppTabs' }], 
-                });
-
             }
         } catch (error) {
             let message = 'เกิดข้อผิดพลาดในการเข้าสู่ระบบที่ไม่ทราบสาเหตุ';

@@ -1,33 +1,24 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 
-// 💡 แก้ไข: รับ prop onAction เข้ามาด้วย
 const UserListItem = ({ user, onAction }) => {
-  // 💡 Destructure properties ใหม่ รวมถึง isDeleted
-  const { fullName, user_uid, lastUsed, daysUsed, totalDurationFormatted, isDeleted } = user;
-  
-  // 💡 กำหนดข้อความและ Style ของปุ่มตามสถานะ isDeleted
+  const { fullName, user_uid, lastUsed, daysUsed, totalDurationFormatted, isDeleted, createdAt } = user;
   const actionButtonText = isDeleted ? 'กู้คืน' : 'ระงับ';
   const actionButtonStyle = isDeleted ? styles.buttonRestore : styles.buttonDelete;
 
   const handleAction = () => {
-    // 💡 ใช้ Alert เพื่อยืนยันการดำเนินการ
     Alert.alert(
       `${actionButtonText} บัญชี`,
       `คุณต้องการ${actionButtonText}บัญชีของ ${fullName} (${user_uid}) หรือไม่?`,
       [
         { text: "ยกเลิก", style: "cancel" },
-        // 💡 เรียก onAction ที่ส่งมาจาก AdminDashboardScreen พร้อม user_uid และสถานะปัจจุบัน
         { text: actionButtonText, onPress: () => onAction(user_uid, isDeleted) },
       ]
     );
   };
 
-  // 💡 กำหนด Styles สำหรับข้อความสถานะ
   const statusStyle = isDeleted ? styles.statusDeleted : styles.statusActive;
-
   return (
-    // 💡 กำหนด Style พื้นหลังให้เป็นสีเทาเมื่อถูกระงับ
     <View style={isDeleted ? styles.rowDeleted : styles.rowContainer}>
       <View style={styles.cellName}>
         <Text style={styles.textName}>{fullName}</Text>
@@ -40,13 +31,16 @@ const UserListItem = ({ user, onAction }) => {
       </View>
 
       <View style={styles.cellStats}>
+        {createdAt && createdAt !== 'N/A' && (
+             <Text style={styles.textCreatedAt}>
+                สร้างเมื่อ: {createdAt} 
+            </Text>
+        )}
         <Text style={styles.textStatsLastUsed}>ใช้งานล่าสุด: {lastUsed}</Text>
-        {/* 💡 แสดงสถิติการใช้งานจริงจาก user object */}
         <Text style={styles.textStats}>ใช้งาน: {daysUsed} วัน ({totalDurationFormatted})</Text>
       </View>
 
       <View style={styles.cellAction}>
-        {/* 💡 ใช้ actionButtonStyle และ actionButtonText ที่กำหนดไว้ */}
         <TouchableOpacity 
           style={[styles.button, actionButtonStyle]} 
           onPress={handleAction}
@@ -59,7 +53,6 @@ const UserListItem = ({ user, onAction }) => {
 };
 
 const styles = StyleSheet.create({
-  // --- Container Styles (มีการเปลี่ยนแปลง) ---
   rowContainer: {
     backgroundColor: '#ffffff',
     borderRadius: 8,
@@ -74,7 +67,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  // 💡 Style ใหม่สำหรับบัญชีที่ถูกระงับ (สีพื้นหลังสีเทาอ่อน)
   rowDeleted: {
     backgroundColor: '#f0f0f0', 
     opacity: 0.8,
@@ -90,7 +82,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  // --- Cell Styles (เหมือนเดิม) ---
   cellName: {
     flex: 2.5,
   },
@@ -102,7 +93,6 @@ const styles = StyleSheet.create({
     flex: 1.5,
     alignItems: 'flex-end',
   },
-  // --- Text Styles (มีการเปลี่ยนแปลง) ---
   textName: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -119,14 +109,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statusActive: {
-    color: '#28a745', // เขียว
+    color: '#28a745',
   },
-  // 💡 Style สำหรับสถานะถูกระงับ (ข้อความสีแดง)
   statusDeleted: {
-    color: '#dc3545', // แดง
+    color: '#dc3545',
   },
   textStatsLastUsed: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#666',
     marginBottom: 2,
   },
@@ -134,7 +123,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#666',
   },
-  // --- Button Styles (มีการเปลี่ยนแปลง) ---
   button: {
     paddingVertical: 8,
     paddingHorizontal: 10,
@@ -145,13 +133,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 13,
   },
-  // 💡 Style สำหรับปุ่มระงับ (สีแดง)
   buttonDelete: {
     backgroundColor: '#dc3545', 
   },
-  // 💡 Style สำหรับปุ่มกู้คืน (สีเหลือง/ส้ม)
   buttonRestore: {
     backgroundColor: '#ffc107', 
+  },
+  textCreatedAt: {
+    fontSize: 12,
+    color: '#007AFF', 
+    marginTop: 2,
+    fontWeight: '500',
   },
 });
 
