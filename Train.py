@@ -18,9 +18,6 @@ label_encoder_path = "label_encoder.pkl"
 
 
 def extract_features(file_path, sr=SAMPLE_RATE, n_mels=N_MELS, max_len=MAX_LEN):
-    """
-    สกัดคุณลักษณะ Mel Spectrogram และปรับความยาวให้คงที่
-    """
     try:
         y, sr = librosa.load(file_path, sr=sr)
         mel_spec = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=n_mels)
@@ -36,31 +33,26 @@ def extract_features(file_path, sr=SAMPLE_RATE, n_mels=N_MELS, max_len=MAX_LEN):
     except Exception as e:
         return None 
 
-# 2. ฟังก์ชันสร้างโมเดล 2D-CNN
 def create_cnn_model(input_shape, num_classes=1):
-    """
-    สร้างโมเดล 2D-CNN สำหรับการจำแนกเสียงกรน/ไม่กรน (Binary Classification)
-    """
     model = tf.keras.models.Sequential([
-        # 1st Convolution Block
+
         tf.keras.layers.Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=input_shape, padding='same'),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
         tf.keras.layers.Dropout(0.25),
 
-        # 2nd Convolution Block
+  
         tf.keras.layers.Conv2D(64, kernel_size=(3, 3), activation='relu', padding='same'),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
         tf.keras.layers.Dropout(0.25),
         
-        # 3rd Convolution Block
+  
         tf.keras.layers.Conv2D(128, kernel_size=(3, 3), activation='relu', padding='same'),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
         tf.keras.layers.Dropout(0.25),
 
-        # Classification Head (Dense Layers)
         tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(256, activation='relu'),
         tf.keras.layers.BatchNormalization(),
@@ -68,21 +60,16 @@ def create_cnn_model(input_shape, num_classes=1):
 
         tf.keras.layers.Dense(num_classes, activation='sigmoid')
     ])
-    
-
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
         loss='binary_crossentropy', 
         metrics=['accuracy']
     )
-    
     return model
 
-# 3. ฟังก์ชันช่วยแสดงกราฟ
 def plot_training_history(history):
     plt.figure(figsize=(12, 4))
     
-    # Loss Plot
     plt.subplot(1, 2, 1)
     plt.plot(history.history['loss'], label='Train Loss')
     plt.plot(history.history['val_loss'], label='Validation Loss')
@@ -91,7 +78,6 @@ def plot_training_history(history):
     plt.xlabel('Epoch')
     plt.legend(loc='upper right')
 
-    # Accuracy Plot
     plt.subplot(1, 2, 2)
     plt.plot(history.history['accuracy'], label='Train Accuracy')
     plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
@@ -102,12 +88,11 @@ def plot_training_history(history):
     
     plt.show()
 
-
 def main():   
     print("="*50)
     print("ระบบฝึกโมเดลตรวจจับเสียงกรนแบบ 2D-CNN Classification")
     print("="*50)
-    print("\n[ขั้นตอนที่ 1] โหลดและสกัดคุณลักษณะข้อมูล (จาก 2 โฟลเดอร์)")
+    print("\nโหลดและสกัดคุณลักษณะข้อมูล")
     
     features = []
     labels = []
@@ -142,13 +127,13 @@ def main():
     print(f"X_train.shape: {X_train.shape}")
     print(f"Y_train.shape: {Y_train.shape}")
 
-    print("\n[ขั้นตอนที่ 3] สร้างโมเดล 2D-CNN")
+    print("\nสร้างโมเดล 2D-CNN")
     input_shape = X_train.shape[1:] 
     
     cnn_model = create_cnn_model(input_shape=input_shape, num_classes=1) 
     cnn_model.summary()
 
-    print("\n[ขั้นตอนที่ 4] เริ่มฝึกโมเดล")
+    print("\nเริ่มฝึกโมเดล")
     history = cnn_model.fit(
         X_train, Y_train,  
         epochs=100,
@@ -163,17 +148,17 @@ def main():
 
     plot_training_history(history)
 
-    print("\n[ขั้นตอนที่ 5] บันทึกโมเดล")
+    print("\n บันทึกโมเดล")
     os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True) 
     cnn_model.save(model_save_path)
-    print(f"✅ บันทึกโมเดลเรียบร้อยที่: {model_save_path}")
+    print(f" บันทึกโมเดลเรียบร้อยที่: {model_save_path}")
 
     try:
         with open(label_encoder_path, 'wb') as f:
             pickle.dump(encoder, f)
-        print(f"✅ บันทึก label encoder เรียบร้อยที่: {label_encoder_path}")
+        print(f" บันทึก label encoder เรียบร้อยที่: {label_encoder_path}")
     except Exception as e:
-        print(f"❌ เกิดข้อผิดพลาดในการบันทึก Label Encoder: {e}")
+        print(f" เกิดข้อผิดพลาดในการบันทึก Label Encoder: {e}")
 
 if __name__ == "__main__":
     main()

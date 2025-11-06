@@ -172,25 +172,6 @@ export default function SnoringListItem({
 
       {isExpanded && (
         <View style={styles.playerContainer}>
-          <View style={styles.playerControls}>
-            <TouchableOpacity onPress={() => onPlayPause(item)}>
-              <MaterialIcons
-                name={isCurrentItem && isPlaying ? "pause-circle-filled" : "play-circle-filled"}
-                size={60}
-                color="#007AFF"
-              />
-            </TouchableOpacity>
-          </View>
-          <Slider
-            style={styles.slider}
-            minimumValue={0}
-            maximumValue={durationInSeconds} // ✅ ใช้ durationInSeconds
-            value={isCurrentItem ? currentPosition : 0}
-            onSlidingComplete={onSeek}
-            minimumTrackTintColor="#007AFF"
-            maximumTrackTintColor="#aaa"
-            thumbTintColor="#007AFF"
-          />
           <View style={styles.playerTime}>
             <Text style={styles.playerTimeText}>
              {formatDuration((isCurrentItem ? currentPosition : 0) * 1000)} 

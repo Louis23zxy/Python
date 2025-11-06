@@ -1,4 +1,3 @@
-// SnoringAnalyzer.js
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, Text, View, FlatList, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -39,7 +38,6 @@ export default function SnoringAnalyzer() {
     
     setIsLoading(true);
     try {
-      // 🚩 ใช้ UID ในการเรียก API เพื่อดึงข้อมูลเฉพาะผู้ใช้คนนี้
       const response = await fetch(`${API_URL}/get-recordings/${uid}`); 
       const data = await response.json();
       
@@ -63,7 +61,7 @@ export default function SnoringAnalyzer() {
       date: formattedDate,
       duration_millis: item.duration_millis ?? (item.duration * 1000) ?? 0,
       snoringEventsCount: item.snoring_count || 0,
-      apneaEventsCount: 0,
+      apneaEventsCount: item.apnea_events_count ?? 0,
       snoringAbsoluteTimestamps: item.snoring_absolute_timestamps || []
     };
   });
@@ -83,13 +81,12 @@ export default function SnoringAnalyzer() {
     }
   }, []);
 
-  // useFocusEffect: โหลดข้อมูลทุกครั้งที่หน้าจอนี้ถูกเปิด/โฟกัส
   useFocusEffect(
     useCallback(() => {
       if (!isAuthLoading && userUID) {
         fetchRecordings(userUID);
       } else if (!isAuthLoading && !userUID) {
-        setAnalysisData([]); // เคลียร์ข้อมูลถ้าไม่มีผู้ใช้ล็อกอิน
+        setAnalysisData([]); 
       }
     }, [isAuthLoading, userUID, fetchRecordings]) 
   );
@@ -102,7 +99,6 @@ export default function SnoringAnalyzer() {
   const [expandedItem, setExpandedItem] = useState(null);
   const soundRef = useRef(null);
 
-  // Function to generate the list of days for the horizontal filter
   const generateDayList = () => {
     const days = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'];
     const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -153,7 +149,6 @@ export default function SnoringAnalyzer() {
     }, [todayFormattedDate])
   );
 
-  // Audio Playback functions
   const onPlaybackStatusUpdate = (status) => {
     if (status.isLoaded) {
       setPosition(status.positionMillis);
@@ -302,7 +297,6 @@ export default function SnoringAnalyzer() {
 
   return (
     <View style={styles.container}>
-      {/* เพิ่ม View นี้กลับเข้ามาเพื่อสร้างพื้นที่ว่าง */}
       <View style={styles.headerSpacer}></View>
 
       <View style={styles.dayFilterContainer}>

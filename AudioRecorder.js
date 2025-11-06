@@ -127,7 +127,6 @@ export default function AudioRecorder() {
 
       await AsyncStorage.setItem("snoring_analysis", JSON.stringify(existingData));
 
-      setStatusMessage(` Analysis complete! Snore Count: ${result.snoring_count}, Max Loudness: ${result.loudest_snore_db} dB`);
     } catch (error) {
       console.error("Upload error:", error);
       setStatusMessage(" Upload failed. Check server IP/Firewall or network connection.");

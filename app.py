@@ -68,7 +68,10 @@ def extract_features(y, sr, n_mels=128, n_fft=2048, hop_length=512, n_frames=128
 @app.route("/analyze-audio", methods=["POST"])
 def analyze_audio():
     """Receives base64 audio data, analyzes it for snoring, and saves results."""
-    if model is None: #โมเดลพร้อมใช้งานมั้ย 
+    # Assuming 'model' and 'extract_features' are defined elsewhere
+    # Assuming 'UPLOAD_FOLDER', 'get_db_connection', AudioSegment, librosa, np, 
+    # datetime, timedelta, os, io, and base64 are imported.
+    if model is None: 
         return jsonify({"error": "Model not loaded", "message": "The AI model failed to load on the server."}), 500
         
     try:
@@ -84,6 +87,7 @@ def analyze_audio():
         audio_bytes = base64.b64decode(audio_base64)
         audio_io = io.BytesIO(audio_bytes)
         
+        # Use a proper temporary file creation for safety
         temp_wav_path = os.path.join(UPLOAD_FOLDER, f"temp_{os.getpid()}.wav")
         audio_segment = AudioSegment.from_file(audio_io)
         audio_segment.export(temp_wav_path, format="wav")
@@ -101,7 +105,7 @@ def analyze_audio():
             all_features_list.append(features)
 
         if not all_features_list:
-            return jsonify({"error": "Analysis failed", "message": "Audio is too short for analysis."}), 400 #ถ้าเสียงสั้นเดิน
+            return jsonify({"error": "Analysis failed", "message": "Audio is too short for analysis."}), 400
 
         X_predict = np.stack([np.expand_dims(f, axis=-1) for f in all_features_list])
         predictions = model.predict(X_predict, verbose=0)
@@ -128,6 +132,7 @@ def analyze_audio():
             
             db_level = 20 * np.log10(rms + 1e-6) 
             snore_db_scaled = 100 + db_level     
+            # loudest_snore_db will retain the NumPy float type here
             loudest_snore_db = max(loudest_snore_db, snore_db_scaled) 
 
         for idx, prob in enumerate(predictions):
@@ -135,15 +140,24 @@ def analyze_audio():
                 snoring_count += 1
                 relative_time = idx * 4.0 
                 snoring_times_seconds.append(relative_time)
+
+        # --- FIX: Convert NumPy float to standard Python float for DB insertion ---
+        # This resolves the "can't adapt type 'numpy.float32'" error.
+        if isinstance(loudest_snore_db, (np.float32, np.float64)):
+            loudest_snore_db_safe = float(loudest_snore_db)
+        else:
+            loudest_snore_db_safe = loudest_snore_db
+
         conn = get_db_connection()
         if not conn:
             return jsonify({"error": "Database error", "message": "Failed to connect to the database."}), 500
-        conn = get_db_connection()
-        if not conn:
-            return jsonify({"error": "Database error", "message": "Failed to connect to the database."}), 500
-             
+        # The previous conn check should be sufficient, removing redundant check here.
+        # conn = get_db_connection()
+        # if not conn:
+        #     return jsonify({"error": "Database error", "message": "Failed to connect to the database."}), 500
+            
         cur = conn.cursor()
-        file_name = f"{user_uid}_{name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.wav" #กันชื่อไฟล์ชนกัน
+        file_name = f"{user_uid}_{name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.wav"
         file_path = os.path.join(UPLOAD_FOLDER, file_name)
         audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
         audio_segment.export(file_path, format="wav")
@@ -153,9 +167,8 @@ def analyze_audio():
         snoring_absolute_timestamps = []
         if snoring_times_seconds:
             for relative_sec in snoring_times_seconds:
-                # แปลงเวลาสัมพัทธ์เป็น timedelta
                 time_offset = timedelta(seconds=relative_sec)
-                # เวลาสัมบูรณ์ = เวลาเริ่มต้น + เวลาชดเชย
+                # เวลากรน = เวลาเริ่มต้น + เวลาชดเชย
                 absolute_time = current_time + time_offset
                 snoring_absolute_timestamps.append(absolute_time)
 
@@ -164,18 +177,17 @@ def analyze_audio():
                 user_uid, name, created_at, snoring_count, loudest_snore_db, file_url,duration_millis,apnea_events_count, snoring_absolute_timestamps
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id;
-        """, (user_uid, name, current_time, snoring_count, loudest_snore_db, file_url, duration_millis, apnea_events_count, snoring_absolute_timestamps))
+        """, (user_uid, name, current_time, snoring_count, loudest_snore_db_safe, file_url, duration_millis, apnea_events_count, snoring_absolute_timestamps))
         new_id = cur.fetchone()[0]
         conn.commit()
         cur.close()
         conn.close()
 
-        # 7. ส่งค่ากลับ
         return jsonify({
             "message": "Analysis complete and data saved to DB",
             "id": new_id,
             "snoring_count": snoring_count,
-            "loudest_snore_db": loudest_snore_db,
+            "loudest_snore_db": loudest_snore_db_safe,
             "apnea_events_count": apnea_events_count,
             "file_url": file_url,
             "created_at": datetime.now().isoformat(),
@@ -237,7 +249,6 @@ def uploaded_file(filename):
     Serves the static audio files from the UPLOAD_FOLDER directory.
     This route allows the mobile app to download/play the audio files.
     """
-    # UPLOAD_FOLDER ควรถูกกำหนดไว้ก่อนหน้านี้ในส่วน CONFIGURATION
     return send_from_directory(UPLOAD_FOLDER, filename)
 
 @app.route("/get-user-profile/<user_uid>", methods=["GET"])
@@ -260,8 +271,7 @@ def get_user_profile(user_uid):
 
         if not row:
             return jsonify({"error": "Not Found", "message": "User profile not found"}), 404
-
-        # แปลงข้อมูลเป็น JSON ที่ ProfileScreen.js ใช้งานได้
+        
         return jsonify({
             "user_uid": row[0],
             "first_name": row[1],
@@ -321,7 +331,8 @@ def get_recordings(user_uid):
             
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, name, snoring_count, loudest_snore_db, file_url, created_at,duration_millis, snoring_absolute_timestamps 
+            -- ดึงข้อมูล apnea_events_count และปรับตำแหน่งของ snoring_absolute_timestamps
+            SELECT id, name, snoring_count, loudest_snore_db, file_url, created_at,duration_millis, apnea_events_count, snoring_absolute_timestamps 
             FROM recordings
             WHERE user_uid = %s
             ORDER BY created_at DESC;
@@ -339,7 +350,8 @@ def get_recordings(user_uid):
                 "file_url": r[4],
                 "created_at": r[5].isoformat(),
                 "duration_millis": r[6],
-                "snoring_absolute_timestamps": [t.isoformat() for t in r[7]] if r[7] else []
+                "apnea_events_count": r[7],
+                "snoring_absolute_timestamps": [t.isoformat() for t in r[8]] if r[8] else [] 
             }
             for r in rows
         ]
@@ -374,7 +386,6 @@ def get_all_user_stats():
                     
             FROM user_profiles up
             LEFT JOIN recordings r ON up.user_uid = r.user_uid
-            -- is_deleted ต้องอยู่ใน GROUP BY เนื่องจากถูก SELECT มา
             GROUP BY up.user_uid, up.first_name, up.last_name, up.is_deleted, up.created_at
             ORDER BY last_used DESC NULLS LAST;
         """)
@@ -392,8 +403,8 @@ def get_all_user_stats():
                 "isDeleted": r[3], 
                 "createdAt": r[4].isoformat() if r[4] else 'N/A', # 🎯 NEW FIELD: Index 4
                 "lastUsed": r[5].isoformat() if r[5] else 'N/A', # 🔑 Index ถูกเลื่อนเป็น 5
-                "daysUsed": int(r[6] or 0), # 🔑 Index ถูกเลื่อนเป็น 6
-                "totalDurationMillis": int(r[7] or 0) # 🔑 Index ถูกเลื่อนเป็น 7 
+                "daysUsed": int(r[6] or 0), 
+                "totalDurationMillis": int(r[7] or 0) 
             }
             for r in rows
         ]
